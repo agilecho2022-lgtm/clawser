@@ -1,0 +1,93 @@
+{
+  "name": "clawser",
+  "version": "2026.3.12",
+  "description": "Browser automation CLI with Chrome extension relay support",
+  "keywords": [
+    "automation",
+    "browser",
+    "cdp",
+    "chrome",
+    "playwright"
+  ],
+  "license": "MIT",
+  "bin": {
+    "clawser": "clawser.mjs"
+  },
+  "directories": {
+    "test": "test"
+  },
+  "files": [
+    "clawser.mjs",
+    "LICENSE",
+    "README.md",
+    "chrome-extension/",
+    "dist/"
+  ],
+  "type": "module",
+  "main": "dist/entry.js",
+  "exports": {
+    ".": "./dist/entry.js",
+    "./cli-entry": "./clawser.mjs"
+  },
+  "scripts": {
+    "build": "node scripts/tsdown-build.mjs",
+    "check": "pnpm format:check && pnpm tsgo && pnpm lint",
+    "dev": "node scripts/run-node.mjs",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
+    "format:fix": "oxfmt --write",
+    "lint": "oxlint --type-aware src test scripts/run-node.mjs scripts/tsdown-build.mjs tsdown.config.ts vitest.config.ts",
+    "lint:fix": "oxlint --type-aware --fix src test scripts/run-node.mjs scripts/tsdown-build.mjs tsdown.config.ts vitest.config.ts && pnpm format:fix",
+    "prepack": "pnpm build",
+    "start": "node scripts/run-node.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:fast": "vitest run",
+    "test:watch": "vitest",
+    "tsgo": "tsgo"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "file-type": "^21.3.1",
+    "json5": "^2.2.3",
+    "jszip": "^3.10.1",
+    "osc-progress": "^0.3.0",
+    "playwright-core": "1.58.2",
+    "sharp": "^0.34.5",
+    "tslog": "^4.10.2",
+    "undici": "^7.24.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "@typescript/native-preview": "7.0.0-dev.20260312.1",
+    "@vitest/coverage-v8": "^4.1.0",
+    "oxfmt": "0.40.0",
+    "oxlint": "^1.55.0",
+    "oxlint-tsgolint": "^0.16.0",
+    "tsdown": "0.21.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "pnpm": {
+    "minimumReleaseAge": 2880,
+    "overrides": {
+      "file-type": "21.3.1",
+      "tar": "7.5.11"
+    },
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
+  }
+}

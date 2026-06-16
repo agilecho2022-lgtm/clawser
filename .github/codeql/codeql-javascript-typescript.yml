@@ -1,0 +1,13 @@
+name: clawser-codeql-javascript-typescript
+
+paths:
+  - src
+
+paths-ignore:
+  - dist
+  - "**/node_modules"
+  - "**/coverage"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.e2e.test.ts"
+  - "**/*.e2e.test.tsx"

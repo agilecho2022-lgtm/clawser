@@ -1,0 +1,183 @@
+#!/usr/bin/env node
+import { spawn } from "node:child_process";
+import { enableCompileCache } from "node:module";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { isRootHelpInvocation, isRootVersionInvocation } from "./cli/argv.js";
+import { applyCliProfileEnv, parseCliProfileArgs } from "./cli/profile.js";
+import { shouldSkipRespawnForArgv } from "./cli/respawn-policy.js";
+import { normalizeWindowsArgv } from "./cli/windows-argv.js";
+import { isTruthyEnvValue } from "./infra/env.js";
+import { isMainModule } from "./infra/is-main.js";
+import { ensureClawserExecMarkerOnProcess } from "./infra/clawser-exec-env.js";
+import { installProcessWarningFilter } from "./infra/warning-filter.js";
+import { attachChildProcessBridge } from "./process/child-process-bridge.js";
+
+const ENTRY_WRAPPER_PAIRS = [
+  { wrapperBasename: "clawser.mjs", entryBasename: "entry.js" },
+  { wrapperBasename: "clawser.js", entryBasename: "entry.js" },
+] as const;
+
+declare global {
+  var __OPENCLAW_ENTRY_RUN_PROMISE: Promise<void> | undefined;
+}
+
+// Guard: only run entry-point logic when this file is the main module.
+// The bundler may import entry.js as a shared dependency when dist/index.js
+// is the actual entry point; without this guard the top-level code below
+// would call runCli a second time, starting a duplicate gateway that fails
+// on the lock / port and crashes the process.
+if (
+  !isMainModule({
+    currentFile: fileURLToPath(import.meta.url),
+    wrapperEntryPairs: [...ENTRY_WRAPPER_PAIRS],
+  })
+) {
+  // Imported as a dependency — skip all entry-point side effects.
+} else {
+  process.title = "clawser";
+  ensureClawserExecMarkerOnProcess();
+  installProcessWarningFilter();
+  if (!isTruthyEnvValue(process.env.NODE_DISABLE_COMPILE_CACHE)) {
+    try {
+      enableCompileCache();
+    } catch {
+      // Best-effort only; never block startup.
+    }
+  }
+
+  if (process.argv.includes("--no-color")) {
+    process.env.NO_COLOR = "1";
+    process.env.FORCE_COLOR = "0";
+  }
+
+  const EXPERIMENTAL_WARNING_FLAG = "--disable-warning=ExperimentalWarning";
+
+  function hasExperimentalWarningSuppressed(): boolean {
+    const nodeOptions = process.env.NODE_OPTIONS ?? "";
+    if (nodeOptions.includes(EXPERIMENTAL_WARNING_FLAG) || nodeOptions.includes("--no-warnings")) {
+      return true;
+    }
+    for (const arg of process.execArgv) {
+      if (arg === EXPERIMENTAL_WARNING_FLAG || arg === "--no-warnings") {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function ensureExperimentalWarningSuppressed(): boolean {
+    if (shouldSkipRespawnForArgv(process.argv)) {
+      return false;
+    }
+    if (isTruthyEnvValue(process.env.OPENCLAW_NO_RESPAWN)) {
+      return false;
+    }
+    if (isTruthyEnvValue(process.env.OPENCLAW_NODE_OPTIONS_READY)) {
+      return false;
+    }
+    if (hasExperimentalWarningSuppressed()) {
+      return false;
+    }
+
+    // Respawn guard (and keep recursion bounded if something goes wrong).
+    process.env.OPENCLAW_NODE_OPTIONS_READY = "1";
+    // Pass flag as a Node CLI option, not via NODE_OPTIONS (--disable-warning is disallowed in NODE_OPTIONS).
+    const child = spawn(
+      process.execPath,
+      [EXPERIMENTAL_WARNING_FLAG, ...process.execArgv, ...process.argv.slice(1)],
+      {
+        stdio: "inherit",
+        env: process.env,
+      },
+    );
+
+    attachChildProcessBridge(child);
+
+    child.once("exit", (code, signal) => {
+      if (signal) {
+        process.exitCode = 1;
+        return;
+      }
+      process.exit(code ?? 1);
+    });
+
+    child.once("error", (error) => {
+      console.error(
+        "[clawser] Failed to respawn CLI:",
+        error instanceof Error ? (error.stack ?? error.message) : error,
+      );
+      process.exit(1);
+    });
+
+    // Parent must not continue running the CLI.
+    return true;
+  }
+
+  function tryHandleRootVersionFastPath(argv: string[]): boolean {
+    if (!isRootVersionInvocation(argv)) {
+      return false;
+    }
+    Promise.all([import("./version.js"), import("./infra/git-commit.js")])
+      .then(([{ VERSION }, { resolveCommitHash }]) => {
+        const commit = resolveCommitHash({ moduleUrl: import.meta.url });
+        console.log(commit ? `Clawser ${VERSION} (${commit})` : `Clawser ${VERSION}`);
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error(
+          "[clawser] Failed to resolve version:",
+          error instanceof Error ? (error.stack ?? error.message) : error,
+        );
+        process.exitCode = 1;
+      });
+    return true;
+  }
+
+  function tryHandleRootHelpFastPath(argv: string[]): boolean {
+    if (!isRootHelpInvocation(argv)) {
+      return false;
+    }
+    import("./cli/program.js")
+      .then(({ buildBrowserOnlyProgram }) => {
+        buildBrowserOnlyProgram().outputHelp();
+      })
+      .catch((error) => {
+        console.error(
+          "[clawser] Failed to display help:",
+          error instanceof Error ? (error.stack ?? error.message) : error,
+        );
+        process.exitCode = 1;
+      });
+    return true;
+  }
+
+  process.argv = normalizeWindowsArgv(process.argv);
+
+  if (!ensureExperimentalWarningSuppressed()) {
+    const parsed = parseCliProfileArgs(process.argv);
+    if (!parsed.ok) {
+      // Keep it simple; Commander will handle rich help/errors after we strip flags.
+      console.error(`[clawser] ${parsed.error}`);
+      process.exit(2);
+    }
+
+    if (parsed.profile) {
+      applyCliProfileEnv({ profile: parsed.profile });
+      // Keep Commander and ad-hoc argv checks consistent.
+      process.argv = parsed.argv;
+    }
+
+    if (!tryHandleRootVersionFastPath(process.argv) && !tryHandleRootHelpFastPath(process.argv)) {
+      globalThis.__OPENCLAW_ENTRY_RUN_PROMISE = import("./cli/run-main.js")
+        .then(({ runCli }) => runCli(process.argv))
+        .catch((error) => {
+          console.error(
+            "[clawser] Failed to start CLI:",
+            error instanceof Error ? (error.stack ?? error.message) : error,
+          );
+          process.exitCode = 1;
+        });
+    }
+  }
+}

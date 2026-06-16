@@ -1,0 +1,634 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`browser CLI help > keeps direct browser subcommand help stable 1`] = `
+"## status
+
+Usage: clawser browser status [options]
+
+Show browser status
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## start
+
+Usage: clawser browser start [options]
+
+Start the browser (no-op if already running)
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## stop
+
+Usage: clawser browser stop [options]
+
+Stop the browser (best-effort)
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## reset-profile
+
+Usage: clawser browser reset-profile [options]
+
+Reset browser profile (moves it to Trash)
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## tabs
+
+Usage: clawser browser tabs [options]
+
+List open tabs
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## tab
+
+Usage: clawser browser tab [options] [command]
+
+Tab shortcuts (index-based)
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  new             Open a new tab (about:blank)
+  select <index>  Focus tab by index (1-based)
+  close [index]   Close tab by index (1-based); default: first tab
+
+---
+
+## open
+
+Usage: clawser browser open [options] <url>
+
+Open a URL in a new tab
+
+Arguments:
+  url         URL to open
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## focus
+
+Usage: clawser browser focus [options] <targetId>
+
+Focus a tab by target id (or unique prefix)
+
+Arguments:
+  targetId    Target id or unique prefix
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## close
+
+Usage: clawser browser close [options] [targetId]
+
+Close a tab (target id optional)
+
+Arguments:
+  targetId    Target id or unique prefix (optional)
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## profiles
+
+Usage: clawser browser profiles [options]
+
+List all browser profiles
+
+Options:
+  -h, --help  display help for command
+
+---
+
+## create-profile
+
+Usage: clawser browser create-profile [options]
+
+Create a new browser profile
+
+Options:
+  --name <name>      Profile name (lowercase, numbers, hyphens)
+  --color <hex>      Profile color (hex format, e.g. #0066CC)
+  --cdp-url <url>    CDP URL for remote Chrome (http/https)
+  --driver <driver>  Profile driver (openclaw|extension). Default: openclaw
+  -h, --help         display help for command
+
+---
+
+## delete-profile
+
+Usage: clawser browser delete-profile [options]
+
+Delete a browser profile
+
+Options:
+  --name <name>  Profile name to delete
+  -h, --help     display help for command
+
+---
+
+## extension
+
+Usage: clawser browser extension [options] [command]
+
+Chrome extension helpers
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  install         Install the Chrome extension to a stable local path
+  path            Print the path to the installed Chrome extension (load
+                  unpacked)
+  help [command]  display help for command
+
+---
+
+## screenshot
+
+Usage: clawser browser screenshot [options] [targetId]
+
+Capture a screenshot (MEDIA:<path>)
+
+Arguments:
+  targetId              CDP target id (or unique prefix)
+
+Options:
+  --full-page           Capture full scrollable page (default: false)
+  --ref <ref>           ARIA ref from ai snapshot
+  --element <selector>  CSS selector for element screenshot
+  --type <png|jpeg>     Output type (default: png) (default: "png")
+  -h, --help            display help for command
+
+---
+
+## snapshot
+
+Usage: clawser browser snapshot [options]
+
+Capture a snapshot (default: ai; aria is the accessibility tree)
+
+Options:
+  --format <aria|ai>  Snapshot format (default: ai) (default: "ai")
+  --target-id <id>    CDP target id (or unique prefix)
+  --limit <n>         Max nodes (default: 500/800)
+  --mode <efficient>  Snapshot preset (efficient)
+  --efficient         Use the efficient snapshot preset (default: false)
+  --interactive       Role snapshot: interactive elements only (default: false)
+  --compact           Role snapshot: compact output (default: false)
+  --depth <n>         Role snapshot: max depth
+  --selector <sel>    Role snapshot: scope to CSS selector
+  --frame <sel>       Role snapshot: scope to an iframe selector
+  --labels            Include viewport label overlay screenshot (default: false)
+  --out <path>        Write snapshot to a file
+  -h, --help          display help for command
+
+---
+
+## navigate
+
+Usage: clawser browser navigate [options] <url>
+
+Navigate the current tab to a URL
+
+Arguments:
+  url               URL to navigate to
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## resize
+
+Usage: clawser browser resize [options] <width> <height>
+
+Resize the viewport
+
+Arguments:
+  width             Viewport width
+  height            Viewport height
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## click
+
+Usage: clawser browser click [options] <ref>
+
+Click an element by ref from snapshot
+
+Arguments:
+  ref                           Ref id from snapshot
+
+Options:
+  --target-id <id>              CDP target id (or unique prefix)
+  --double                      Double click (default: false)
+  --button <left|right|middle>  Mouse button to use
+  --modifiers <list>            Comma-separated modifiers (Shift,Alt,Meta)
+  -h, --help                    display help for command
+
+---
+
+## type
+
+Usage: clawser browser type [options] <ref> <text>
+
+Type into an element by ref from snapshot
+
+Arguments:
+  ref               Ref id from snapshot
+  text              Text to type
+
+Options:
+  --submit          Press Enter after typing (default: false)
+  --slowly          Type slowly (human-like) (default: false)
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## press
+
+Usage: clawser browser press [options] <key>
+
+Press a key
+
+Arguments:
+  key               Key to press (e.g. Enter)
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## hover
+
+Usage: clawser browser hover [options] <ref>
+
+Hover an element by ai ref
+
+Arguments:
+  ref               Ref id from snapshot
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## scrollintoview
+
+Usage: clawser browser scrollintoview [options] <ref>
+
+Scroll an element into view by ref from snapshot
+
+Arguments:
+  ref                Ref id from snapshot
+
+Options:
+  --target-id <id>   CDP target id (or unique prefix)
+  --timeout-ms <ms>  How long to wait for scroll (default: 20000)
+  -h, --help         display help for command
+
+---
+
+## drag
+
+Usage: clawser browser drag [options] <startRef> <endRef>
+
+Drag from one ref to another
+
+Arguments:
+  startRef          Start ref id
+  endRef            End ref id
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## select
+
+Usage: clawser browser select [options] <ref> <values...>
+
+Select option(s) in a select element
+
+Arguments:
+  ref               Ref id from snapshot
+  values            Option values to select
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## upload
+
+Usage: clawser browser upload [options] <paths...>
+
+Arm file upload for the next file chooser
+
+Arguments:
+  paths                 File paths to upload (must be within Clawser temp
+                        uploads dir, e.g. /tmp/clawser/uploads/file.pdf)
+
+Options:
+  --ref <ref>           Ref id from snapshot to click after arming
+  --input-ref <ref>     Ref id for <input type=file> to set directly
+  --element <selector>  CSS selector for <input type=file>
+  --target-id <id>      CDP target id (or unique prefix)
+  --timeout-ms <ms>     How long to wait for the next file chooser (default:
+                        120000)
+  -h, --help            display help for command
+
+---
+
+## waitfordownload
+
+Usage: clawser browser waitfordownload [options] [path]
+
+Wait for the next download (and save it)
+
+Arguments:
+  path               Save path within Clawser temp downloads dir (default:
+                     /tmp/clawser/downloads/...; fallback:
+                     os.tmpdir()/clawser/downloads/...)
+
+Options:
+  --target-id <id>   CDP target id (or unique prefix)
+  --timeout-ms <ms>  How long to wait for the next download (default: 120000)
+  -h, --help         display help for command
+
+---
+
+## download
+
+Usage: clawser browser download [options] <ref> <path>
+
+Click a ref and save the resulting download
+
+Arguments:
+  ref                Ref id from snapshot to click
+  path               Save path within Clawser temp downloads dir (e.g.
+                     report.pdf or /tmp/clawser/downloads/report.pdf)
+
+Options:
+  --target-id <id>   CDP target id (or unique prefix)
+  --timeout-ms <ms>  How long to wait for the download to start (default:
+                     120000)
+  -h, --help         display help for command
+
+---
+
+## dialog
+
+Usage: clawser browser dialog [options]
+
+Arm the next modal dialog (alert/confirm/prompt)
+
+Options:
+  --accept           Accept the dialog (default: false)
+  --dismiss          Dismiss the dialog (default: false)
+  --prompt <text>    Prompt response text
+  --target-id <id>   CDP target id (or unique prefix)
+  --timeout-ms <ms>  How long to wait for the next dialog (default: 120000)
+  -h, --help         display help for command
+
+---
+
+## fill
+
+Usage: clawser browser fill [options]
+
+Fill a form with JSON field descriptors
+
+Options:
+  --fields <json>       JSON array of field objects
+  --fields-file <path>  Read JSON array from a file
+  --target-id <id>      CDP target id (or unique prefix)
+  -h, --help            display help for command
+
+---
+
+## wait
+
+Usage: clawser browser wait [options] [selector]
+
+Wait for time, selector, URL, load state, or JS conditions
+
+Arguments:
+  selector                                    CSS selector to wait for (visible)
+
+Options:
+  --time <ms>                                 Wait for N milliseconds
+  --text <value>                              Wait for text to appear
+  --text-gone <value>                         Wait for text to disappear
+  --url <pattern>                             Wait for URL (supports globs like **/dash)
+  --load <load|domcontentloaded|networkidle>  Wait for load state
+  --fn <js>                                   Wait for JS condition (passed to waitForFunction)
+  --timeout-ms <ms>                           How long to wait for each condition (default: 20000)
+  --target-id <id>                            CDP target id (or unique prefix)
+  -h, --help                                  display help for command
+
+---
+
+## evaluate
+
+Usage: clawser browser evaluate [options]
+
+Evaluate a function against the page or a ref
+
+Options:
+  --fn <code>       Function source, e.g. (el) => el.textContent
+  --ref <id>        Ref from snapshot
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## console
+
+Usage: clawser browser console [options]
+
+Get recent console messages
+
+Options:
+  --level <level>   Filter by level (error, warn, info)
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## pdf
+
+Usage: clawser browser pdf [options]
+
+Save page as PDF
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## responsebody
+
+Usage: clawser browser responsebody [options] <url>
+
+Wait for a network response and return its body
+
+Arguments:
+  url                URL (exact, substring, or glob like **/api)
+
+Options:
+  --target-id <id>   CDP target id (or unique prefix)
+  --timeout-ms <ms>  How long to wait for the response (default: 20000)
+  --max-chars <n>    Max body chars to return (default: 200000)
+  -h, --help         display help for command
+
+---
+
+## highlight
+
+Usage: clawser browser highlight [options] <ref>
+
+Highlight an element by ref
+
+Arguments:
+  ref               Ref id from snapshot
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## errors
+
+Usage: clawser browser errors [options]
+
+Get recent page errors
+
+Options:
+  --clear           Clear stored errors after reading (default: false)
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## requests
+
+Usage: clawser browser requests [options]
+
+Get recent network requests (best-effort)
+
+Options:
+  --filter <text>   Only show URLs that contain this substring
+  --clear           Clear stored requests after reading (default: false)
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
+
+---
+
+## trace
+
+Usage: clawser browser trace [options] [command]
+
+Record a Playwright trace
+
+Options:
+  -h, --help       display help for command
+
+Commands:
+  start [options]  Start trace recording
+  stop [options]   Stop trace recording and write a .zip
+  help [command]   display help for command
+
+---
+
+## cookies
+
+Usage: clawser browser cookies [options] [command]
+
+Read/write cookies
+
+Options:
+  --target-id <id>              CDP target id (or unique prefix)
+  -h, --help                    display help for command
+
+Commands:
+  set [options] <name> <value>  Set a cookie (requires --url or domain+path)
+  clear [options]               Clear all cookies
+
+---
+
+## storage
+
+Usage: clawser browser storage [options] [command]
+
+Read/write localStorage/sessionStorage
+
+Options:
+  -h, --help      display help for command
+
+Commands:
+  local           localStorage commands
+  session         sessionStorage commands
+  help [command]  display help for command
+
+---
+
+## set
+
+Usage: clawser browser set [options] [command]
+
+Browser environment settings
+
+Options:
+  -h, --help                                   display help for command
+
+Commands:
+  viewport [options] <width> <height>          Set viewport size (alias for resize)
+  offline [options] <on|off>                   Toggle offline mode
+  headers [options] [headersJson]              Set extra HTTP headers (JSON object)
+  credentials [options] [username] [password]  Set HTTP basic auth credentials
+  geo [options] [latitude] [longitude]         Set geolocation (and grant permission)
+  media [options] <dark|light|none>            Emulate prefers-color-scheme
+  timezone [options] <timezoneId>              Override timezone (CDP)
+  locale [options] <locale>                    Override locale (CDP)
+  device [options] <name>                      Apply a Playwright device descriptor (e.g. "iPhone 14")
+  help [command]                               display help for command"
+`;

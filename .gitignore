@@ -1,0 +1,55 @@
+node_modules/
+**/node_modules/
+
+# Local environment
+.env
+.env.*
+!.env.example
+.local/
+local/
+tmp/
+.dev-state
+.worktrees/
+
+# Build and test output
+dist/
+coverage/
+*.tsbuildinfo
+.pnpm-store/
+.vite/
+
+# Package-manager side files
+package-lock.json
+
+# Python/cache helpers used by checks
+__pycache__/
+*.pyc
+
+# System/editor files
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Local agent/tooling state
+.agent/
+.agents/
+.agents
+.claude/
+.serena/
+skills-lock.json
+memory/
+
+# Local identity notes
+IDENTITY.md
+USER.md
+*.tgz
+
+# Generic IDE/project metadata
+**/.project
+**/.classpath
+**/.settings/
+**/.gradle/
+**/.stfolder/
