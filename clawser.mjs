@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import module from "node:module";
 import os from "node:os";
@@ -255,6 +255,92 @@ async function waitForRelay() {
   return false;
 }
 
+function execFileQuiet(file, args, timeout = 1500) {
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout, windowsHide: true }, (error, stdout) => {
+      resolve({ ok: !error, stdout: stdout ?? "" });
+    });
+  });
+}
+
+async function isAnyProcessRunning(names) {
+  if (process.platform === "darwin") {
+    for (const name of names) {
+      if ((await execFileQuiet("pgrep", ["-x", name])).ok) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (process.platform === "win32") {
+    for (const name of names) {
+      const result = await execFileQuiet("tasklist.exe", ["/FI", `IMAGENAME eq ${name}`, "/NH"], 2500);
+      if (result.stdout.toLowerCase().includes(name.toLowerCase())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (const name of names) {
+    if ((await execFileQuiet("pgrep", ["-x", name])).ok) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function spawnDetached(file, args) {
+  try {
+    const child = spawn(file, args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureChromeHasBlankTab() {
+  if (process.env.CLAWSER_SKIP_CHROME_BOOTSTRAP?.trim()) {
+    return;
+  }
+
+  const chromeProcessNames =
+    process.platform === "darwin"
+      ? ["Google Chrome", "Google Chrome Canary"]
+      : process.platform === "win32"
+        ? ["chrome.exe"]
+        : ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"];
+
+  if (await isAnyProcessRunning(chromeProcessNames)) {
+    return;
+  }
+
+  if (process.platform === "darwin") {
+    if (spawnDetached("open", ["-a", "Google Chrome", "about:blank"])) {
+      return;
+    }
+    spawnDetached("open", ["-a", "Google Chrome Canary", "about:blank"]);
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawnDetached("cmd.exe", ["/d", "/s", "/c", "start", "", "chrome", "about:blank"]);
+    return;
+  }
+
+  for (const command of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"]) {
+    if (spawnDetached(command, ["about:blank"])) {
+      return;
+    }
+  }
+}
+
 async function ensureDaemon(args) {
   const env = profileEnvForArgs(args);
   const existing = readDaemonPid(env);
@@ -369,6 +455,7 @@ if (rawArgs[0] === "__daemon") {
 
 if (commandName(rawArgs) === "start") {
   await ensureDaemon(rawArgs);
+  await ensureChromeHasBlankTab();
 }
 
 process.argv = [
