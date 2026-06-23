@@ -39,6 +39,32 @@ Current intentional limits:
 - Google Chrome
 - Go `1.24+` only if you want to build the tray helper
 
+## Quick Install
+
+Linux / macOS / WSL2 / Android (Termux):
+
+```bash
+curl -fsSL https://www.toymotion.fun/install.sh | bash
+```
+
+Windows native PowerShell:
+
+```powershell
+iex (irm https://www.toymotion.fun/install.ps1)
+```
+
+The quick install script installs the source checkout to `~/.clawser-src` and
+links the `clawser` command to `~/.local/bin/clawser`. If `~/.local/bin` is not
+on `PATH`, the script prints the line to add to your shell profile.
+
+You can override the source, branch, and install directory with environment
+variables:
+
+```bash
+curl -fsSL https://www.toymotion.fun/install.sh | \
+  CLAWSER_BRANCH=main CLAWSER_INSTALL_DIR=/opt/clawser bash
+```
+
 ## Install From Source
 
 ```bash
@@ -369,4 +395,3 @@ go test ./...
 ./scripts/build-macos-app.sh
 open -n "/tmp/Clawser Tray.app"
 ```
-

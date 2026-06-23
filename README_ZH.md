@@ -36,6 +36,31 @@ English documentation: [README.md](README.md)
 - Google Chrome
 - 如果要构建菜单栏程序，需要 Go `1.24+`
 
+## 快速安装
+
+Linux / macOS / WSL2 / Android (Termux)：
+
+```bash
+curl -fsSL https://www.toymotion.fun/install.sh | bash
+```
+
+Windows 原生 PowerShell：
+
+```powershell
+iex (irm https://www.toymotion.fun/install.ps1)
+```
+
+快速安装脚本默认把源码安装到 `~/.clawser-src`，并把 `clawser` 命令链接到
+`~/.local/bin/clawser`。如果 `~/.local/bin` 不在 `PATH` 里，脚本会在结束时打印
+需要添加的 `PATH` 配置。
+
+可通过环境变量覆盖安装来源、分支和目录：
+
+```bash
+curl -fsSL https://www.toymotion.fun/install.sh | \
+  CLAWSER_BRANCH=main CLAWSER_INSTALL_DIR=/opt/clawser bash
+```
+
 ## 从源码安装
 
 ```bash
@@ -362,4 +387,3 @@ go test ./...
 ./scripts/build-macos-app.sh
 open -n "/tmp/Clawser Tray.app"
 ```
-
