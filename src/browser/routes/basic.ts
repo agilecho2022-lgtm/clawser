@@ -1,5 +1,6 @@
 import { resolveBrowserExecutableForPlatform } from "../chrome.executables.js";
 import { toBrowserErrorResponse } from "../errors.js";
+import { probeClawserRelay } from "../extension-relay-auth.js";
 import { createBrowserProfilesService } from "../profiles-service.js";
 import type { BrowserRouteContext, ProfileContext } from "../server-context.js";
 import { resolveProfileContext } from "./agent.shared.js";
@@ -53,9 +54,12 @@ export function registerBrowserBasicRoutes(app: BrowserRouteRegistrar, ctx: Brow
       return jsonError(res, profileCtx.status, profileCtx.error);
     }
 
-    const [cdpHttp, cdpReady] = await Promise.all([
+    const [cdpHttp, cdpReady, extensionRelayReachable] = await Promise.all([
       profileCtx.isHttpReachable(300),
       profileCtx.isReachable(600),
+      profileCtx.profile.driver === "extension"
+        ? probeClawserRelay({ baseUrl: profileCtx.profile.cdpUrl, timeoutMs: 600 })
+        : Promise.resolve(false),
     ]);
 
     const profileState = current.profiles.get(profileCtx.profile.name);
@@ -76,7 +80,7 @@ export function registerBrowserBasicRoutes(app: BrowserRouteRegistrar, ctx: Brow
     res.json({
       enabled: current.resolved.enabled,
       profile: profileCtx.profile.name,
-      running: cdpReady,
+      running: profileCtx.profile.driver === "extension" ? extensionRelayReachable : cdpReady,
       cdpReady,
       cdpHttp,
       pid: profileState?.running?.pid ?? null,

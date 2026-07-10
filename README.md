@@ -187,8 +187,7 @@ The repository includes a small Go tray app under `tray/`.
 
 Current menu:
 
-- `Start Clawser`
-- `Stop Clawser`
+- `Start Clawser` or `Stop Clawser`, depending on relay state
 - relay status
 - `Quit`
 

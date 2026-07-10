@@ -181,8 +181,7 @@ CLAWSER_SKIP_CHROME_BOOTSTRAP=1 clawser start
 
 当前菜单包含：
 
-- `Start Clawser`
-- `Stop Clawser`
+- 根据 relay 状态显示 `Start Clawser` 或 `Stop Clawser`
 - relay 状态
 - `Quit`
 

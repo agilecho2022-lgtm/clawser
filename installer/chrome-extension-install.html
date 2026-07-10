@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clawser Chrome 插件安装说明</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --accent: #ef5b3f;
+        --ok: #16833a;
+        --panel: color-mix(in oklab, canvas 94%, canvasText 6%);
+        --border: color-mix(in oklab, canvasText 16%, transparent);
+        --muted: color-mix(in oklab, canvasText 68%, transparent);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+      body {
+        margin: 0;
+        background: canvas;
+        color: canvasText;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 34px 22px 56px;
+      }
+      header {
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 22px;
+        padding-bottom: 18px;
+      }
+      h1 {
+        font-size: 28px;
+        line-height: 1.2;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 0 0 10px;
+      }
+      p {
+        margin: 8px 0;
+        color: var(--muted);
+      }
+      ol {
+        padding-left: 24px;
+      }
+      li {
+        margin: 10px 0;
+      }
+      code,
+      .path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 13px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin: 14px 0;
+      }
+      .path {
+        display: block;
+        margin-top: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow-wrap: anywhere;
+        color: canvasText;
+        background: color-mix(in oklab, canvas 96%, canvasText 4%);
+      }
+      .note {
+        border-left: 4px solid var(--accent);
+        padding: 10px 12px;
+        background: color-mix(in oklab, var(--accent) 10%, canvas);
+        color: canvasText;
+      }
+      .done {
+        border-left-color: var(--ok);
+        background: color-mix(in oklab, var(--ok) 10%, canvas);
+      }
+      a {
+        color: color-mix(in oklab, var(--accent) 82%, canvasText 18%);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>安装 Clawser Browser Relay</h1>
+        <p>Clawser 已经安装好。Chrome 插件需要你手动加载一次，这是 Chrome 的安全限制。</p>
+      </header>
+
+      <section class="card">
+        <h2>1. 打开 Chrome 扩展管理页</h2>
+        <p>
+          在 Chrome 地址栏打开 <a href="chrome://extensions">chrome://extensions</a>。
+          如果链接没有响应，请手动复制 <code>chrome://extensions</code> 到地址栏。
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>2. 开启开发者模式并加载插件目录</h2>
+        <ol>
+          <li>打开右上角 <strong>Developer mode / 开发者模式</strong>。</li>
+          <li>点击 <strong>Load unpacked / 加载已解压的扩展程序</strong>。</li>
+          <li>选择下面这个安装目录里的 <strong>chrome-extension</strong> 文件夹。</li>
+        </ol>
+        <span class="path" id="extension-path">chrome-extension</span>
+      </section>
+
+      <section class="card">
+        <h2>3. 在插件设置页点击 Save</h2>
+        <p>
+          插件安装后会打开 <strong>Clawser Browser Relay</strong> 设置页。
+          保持端口为 <code>18792</code>，点击 <strong>Save</strong>。
+        </p>
+        <p>
+          如果设置页没有自动打开，可以在扩展详情页点击 <strong>Extension options / 扩展程序选项</strong>。
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>4. 从托盘启动并连接当前标签页</h2>
+        <ol>
+          <li>点击系统托盘或菜单栏里的 <strong>Clawser</strong>。</li>
+          <li>
+            如果菜单显示 <strong>Start Clawser</strong>，点击它并等待状态变成
+            <strong>On</strong>。如果菜单显示 <strong>Stop Clawser</strong>，说明 relay 已经在运行。
+          </li>
+          <li>打开要控制的网页，点击 Chrome 工具栏里的 <strong>Clawser Browser Relay</strong> 图标。</li>
+          <li>徽标显示 <strong>ON</strong> 后，托盘状态会变成 <strong>Attached</strong>。</li>
+        </ol>
+      </section>
+
+      <p class="note done">
+        以后不用重复加载插件。需要重新查看说明时，可以打开安装目录里的
+        <strong>chrome-extension-install.html</strong>。
+      </p>
+    </main>
+
+    <script>
+      const marker = "/chrome-extension-install.html";
+      const rawPath = decodeURIComponent(window.location.pathname || "");
+      const base = rawPath.endsWith(marker) ? rawPath.slice(0, -marker.length) : rawPath;
+      const extPath = base ? `${base}/chrome-extension` : "chrome-extension";
+      document.getElementById("extension-path").textContent = extPath;
+    </script>
+  </body>
+</html>

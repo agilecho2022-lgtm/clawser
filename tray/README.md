@@ -4,8 +4,7 @@ Local tray/menu bar helper for Clawser.
 
 The first version intentionally keeps the menu small:
 
-- Start Clawser
-- Stop Clawser
+- Start Clawser / Stop Clawser, depending on relay state
 - Relay status
 - Quit
 

@@ -199,6 +199,22 @@ function ensureClawserConfig(env) {
     browser.profiles = profiles;
     changed = true;
   }
+  if (
+    profiles.chrome &&
+    typeof profiles.chrome === "object" &&
+    !Array.isArray(profiles.chrome) &&
+    profiles.chrome.driver !== "extension" &&
+    String(profiles.chrome.cdpUrl ?? "").replace(/\/$/, "") ===
+      CLAWSER_DEFAULT_BROWSER_CONFIG.profiles.chrome.cdpUrl
+  ) {
+    profiles.chrome = {
+      ...profiles.chrome,
+      driver: "extension",
+      color: profiles.chrome.color ?? CLAWSER_DEFAULT_BROWSER_CONFIG.profiles.chrome.color,
+    };
+    browser.profiles = profiles;
+    changed = true;
+  }
 
   if (changed) {
     next.browser = browser;
