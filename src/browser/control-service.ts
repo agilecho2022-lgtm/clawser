@@ -44,6 +44,7 @@ export async function startBrowserControlServiceFromConfig(): Promise<BrowserSer
     port: resolved.controlPort,
     resolved,
     onWarn: (message) => logService.warn(message),
+    ensureExtensionRelay: false,
   });
 
   logService.info(

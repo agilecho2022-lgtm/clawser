@@ -33,7 +33,7 @@ xattr -cr "$INSTALL_ROOT" 2>/dev/null || true
 
 cat >"$SCRIPTS_DIR/postinstall" <<'POSTINSTALL'
 #!/bin/sh
-pkill -f "/Applications/Clawser/Clawser Tray.app/Contents/MacOS/clawser-tray" >/dev/null 2>&1 || true
+pkill -x clawser-tray >/dev/null 2>&1 || true
 open -n "/Applications/Clawser/Clawser Tray.app" >/dev/null 2>&1 || true
 open "/Applications/Clawser/chrome-extension-install.html" >/dev/null 2>&1 || true
 exit 0

@@ -8,6 +8,7 @@ export async function createBrowserRuntimeState(params: {
   port: number;
   server?: Server | null;
   onWarn: (message: string) => void;
+  ensureExtensionRelay?: boolean;
 }): Promise<BrowserServerState> {
   const state: BrowserServerState = {
     server: params.server ?? null,
@@ -16,10 +17,12 @@ export async function createBrowserRuntimeState(params: {
     profiles: new Map(),
   };
 
-  await ensureExtensionRelayForProfiles({
-    resolved: params.resolved,
-    onWarn: params.onWarn,
-  });
+  if (params.ensureExtensionRelay !== false) {
+    await ensureExtensionRelayForProfiles({
+      resolved: params.resolved,
+      onWarn: params.onWarn,
+    });
+  }
 
   return state;
 }
