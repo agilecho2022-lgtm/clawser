@@ -28,7 +28,12 @@ function printJsonResult(parent: BrowserParentOpts, payload: unknown): boolean {
 async function callTabAction(
   parent: BrowserParentOpts,
   profile: string | undefined,
-  body: { action: "new" | "select" | "close"; index?: number },
+  body: {
+    action: "attach" | "attach-active" | "new" | "select" | "close";
+    all?: boolean;
+    index?: number;
+    urlContains?: string;
+  },
 ) {
   return callBrowserRequest(
     parent,
@@ -97,6 +102,10 @@ function logBrowserTabs(tabs: BrowserTab[], json?: boolean) {
       .map((t, i) => `${i + 1}. ${t.title || "(untitled)"}\n   ${t.url}\n   id: ${t.targetId}`)
       .join("\n"),
   );
+}
+
+function describeAttachedTabs(count: number): string {
+  return count === 1 ? "attached 1 tab" : `attached ${count} tabs`;
 }
 
 export function registerBrowserManageCommands(
@@ -200,6 +209,42 @@ export function registerBrowserManageCommands(
         );
         const tabs = result.tabs ?? [];
         logBrowserTabs(tabs, parent?.json);
+      });
+    });
+
+  browser
+    .command("attach")
+    .description("Attach Clawser to Chrome tab(s)")
+    .argument("[urlContains]", "Attach tabs whose URL contains this text")
+    .option("--all", "Attach all ordinary Chrome tabs", false)
+    .action(async (urlContains: string | undefined, opts: { all?: boolean }, cmd) => {
+      const parent = parentOpts(cmd);
+      const profile = parent?.browserProfile;
+      const match = urlContains?.trim();
+      if (opts.all && match) {
+        defaultRuntime.error(danger("attach accepts either --all or a URL match, not both"));
+        defaultRuntime.exit(1);
+        return;
+      }
+      await runBrowserCommand(async () => {
+        const result =
+          opts.all || match
+            ? await callTabAction(parent, profile, {
+                action: "attach",
+                all: opts.all === true,
+                urlContains: match || undefined,
+              })
+            : await callTabAction(parent, profile, { action: "attach-active" });
+        if (printJsonResult(parent, result)) {
+          return;
+        }
+        if (opts.all || match) {
+          const tabs = (result as { tabs?: BrowserTab[] })?.tabs ?? [];
+          defaultRuntime.log(describeAttachedTabs(tabs.length));
+          return;
+        }
+        const tab = (result as { tab?: BrowserTab })?.tab;
+        defaultRuntime.log(`attached active tab: ${tab?.url || tab?.targetId || "(unknown)"}`);
       });
     });
 

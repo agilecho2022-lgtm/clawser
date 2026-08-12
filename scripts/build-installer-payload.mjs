@@ -61,6 +61,7 @@ fs.mkdirSync(outDir, { recursive: true });
 copyRequired("clawser.mjs");
 copyRequired("package.json");
 copyRequired("pnpm-lock.yaml");
+copyRequired("pnpm-workspace.yaml");
 copyRequired("dist");
 copyRequired("chrome-extension");
 copyRequired("installer/chrome-extension-install.html", "chrome-extension-install.html");
@@ -70,7 +71,8 @@ copyOptional("LICENSE");
 copyOptional("dist-tray", "tray");
 writeInstallNote();
 
-run("pnpm", ["install", "--prod", "--frozen-lockfile", "--ignore-workspace"], { cwd: outDir });
+run("pnpm", ["install", "--prod", "--frozen-lockfile"], { cwd: outDir });
+run(process.execPath, [path.join(root, "scripts", "verify-portable-node-modules.mjs"), outDir]);
 
 if (process.platform === "darwin" && process.env.CLAWSER_SKIP_MACOS_APP !== "1") {
   run(

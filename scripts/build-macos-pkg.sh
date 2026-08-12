@@ -21,6 +21,7 @@ BIN_DIR="$INSTALL_ROOT/usr/local/bin"
 
 mkdir -p "$TARGET_DIR" "$BIN_DIR" "$SCRIPTS_DIR" "$(dirname "$PKG_PATH")"
 cp -R "$PAYLOAD_DIR/." "$TARGET_DIR/"
+node "$ROOT_DIR/scripts/verify-portable-node-modules.mjs" "$TARGET_DIR"
 cat >"$BIN_DIR/clawser" <<'CLIBIN'
 #!/bin/sh
 set -eu

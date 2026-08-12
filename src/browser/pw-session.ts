@@ -669,13 +669,14 @@ export function refLocator(page: Page, ref: string) {
 
   if (/^e\d+$/.test(normalized)) {
     const state = pageStates.get(page);
+    const resolved = resolveCachedAriaRefForPage(page, normalized);
     if (state?.roleRefsMode === "aria") {
       const scope = state.roleRefsFrameSelector
         ? page.frameLocator(state.roleRefsFrameSelector)
         : page;
-      return scope.locator(`aria-ref=${normalized}`);
+      return scope.locator(`aria-ref=${resolved}`);
     }
-    const info = state?.roleRefs?.[normalized];
+    const info = state?.roleRefs?.[resolved];
     if (!info) {
       throw new Error(
         `Unknown ref "${normalized}". Run a new snapshot and use a ref from that snapshot.`,

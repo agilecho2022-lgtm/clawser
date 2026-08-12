@@ -258,8 +258,10 @@ export async function browserCloseTab(
 export async function browserTabAction(
   baseUrl: string | undefined,
   opts: {
-    action: "list" | "new" | "close" | "select";
+    action: "attach" | "attach-active" | "list" | "new" | "close" | "select";
+    all?: boolean;
     index?: number;
+    urlContains?: string;
     profile?: string;
   },
 ): Promise<unknown> {
@@ -269,7 +271,9 @@ export async function browserTabAction(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       action: opts.action,
+      all: opts.all,
       index: opts.index,
+      urlContains: opts.urlContains,
     }),
     timeoutMs: 10_000,
   });

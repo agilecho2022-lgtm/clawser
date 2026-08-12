@@ -105,10 +105,65 @@ describe("browser manage start timeout option", () => {
     { args: ["start"], paths: ["/start", "/"] },
     { args: ["stop"], paths: ["/stop", "/"] },
     { args: ["tabs"], paths: ["/tabs"] },
+    { args: ["attach"], paths: ["/tabs/action"] },
     { args: ["profiles"], paths: ["/profiles"] },
   ])("routes browser $args command through expected manage endpoint", async ({ args, paths }) => {
     await parseBrowser(args);
 
     expect(requestedPaths()).toEqual(paths);
+  });
+
+  it("sends attach-active tab action for browser attach", async () => {
+    mocks.callBrowserRequest.mockResolvedValueOnce({
+      ok: true,
+      tab: { targetId: "tab-1", title: "Tab", url: "https://example.com" },
+    });
+
+    await parseBrowser(["attach"]);
+
+    const [, req] = mocks.callBrowserRequest.mock.calls.at(-1) ?? [];
+    expect(req).toMatchObject({
+      method: "POST",
+      path: "/tabs/action",
+      body: { action: "attach-active" },
+    });
+    expect(mocks.runtimeLog).toHaveBeenCalledWith("attached active tab: https://example.com");
+  });
+
+  it("sends URL match for browser attach with an address argument", async () => {
+    mocks.callBrowserRequest.mockResolvedValueOnce({
+      ok: true,
+      tabs: [{ targetId: "tab-1", title: "Tab", url: "https://foo.example.com/app" }],
+    });
+
+    await parseBrowser(["attach", "foo.example.com"]);
+
+    const [, req] = mocks.callBrowserRequest.mock.calls.at(-1) ?? [];
+    expect(req).toMatchObject({
+      method: "POST",
+      path: "/tabs/action",
+      body: { action: "attach", urlContains: "foo.example.com" },
+    });
+    expect(mocks.runtimeLog).toHaveBeenCalledWith("attached 1 tab");
+  });
+
+  it("sends all-tabs mode for browser attach --all", async () => {
+    mocks.callBrowserRequest.mockResolvedValueOnce({
+      ok: true,
+      tabs: [
+        { targetId: "tab-1", title: "One", url: "https://one.example.com" },
+        { targetId: "tab-2", title: "Two", url: "https://two.example.com" },
+      ],
+    });
+
+    await parseBrowser(["attach", "--all"]);
+
+    const [, req] = mocks.callBrowserRequest.mock.calls.at(-1) ?? [];
+    expect(req).toMatchObject({
+      method: "POST",
+      path: "/tabs/action",
+      body: { action: "attach", all: true },
+    });
+    expect(mocks.runtimeLog).toHaveBeenCalledWith("attached 2 tabs");
   });
 });

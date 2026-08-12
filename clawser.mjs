@@ -370,6 +370,7 @@ async function ensureDaemon(args) {
     detached: true,
     env,
     stdio: "ignore",
+    windowsHide: true,
   });
   child.unref();
   if (child.pid) {

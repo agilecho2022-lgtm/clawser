@@ -74,6 +74,7 @@ describe("browser CLI help", () => {
         stop                                Stop the browser (best-effort)
         reset-profile                       Reset browser profile (moves it to Trash)
         tabs                                List open tabs
+        attach [options] [urlContains]      Attach Clawser to Chrome tab(s)
         tab                                 Tab shortcuts (index-based)
         open <url>                          Open a URL in a new tab
         focus <targetId>                    Focus a tab by target id (or unique
@@ -84,6 +85,7 @@ describe("browser CLI help", () => {
         delete-profile [options]            Delete a browser profile
         extension                           Chrome extension helpers
         screenshot [options] [targetId]     Capture a screenshot (MEDIA:<path>)
+        frames-html [options]               Capture HTML for the page and all frames
         snapshot [options]                  Capture a snapshot (default: ai; aria is
                                             the accessibility tree)
         navigate [options] <url>            Navigate the current tab to a URL

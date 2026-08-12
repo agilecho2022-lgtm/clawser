@@ -18,9 +18,12 @@ export function registerBrowserInspectCommands(
     .option("--ref <ref>", "ARIA ref from ai snapshot")
     .option("--element <selector>", "CSS selector for element screenshot")
     .option("--type <png|jpeg>", "Output type (default: png)", "png")
+    .option("--quality <0-100>", "JPEG quality (default: 85)", "85")
     .action(async (targetId: string | undefined, opts, cmd) => {
       const parent = parentOpts(cmd);
       const profile = parent?.browserProfile;
+      const quality = Number(opts.quality);
+      const type = opts.type === "jpeg" ? "jpeg" : "png";
       try {
         const result = await callBrowserRequest<{ path: string }>(
           parent,
@@ -33,7 +36,8 @@ export function registerBrowserInspectCommands(
               fullPage: Boolean(opts.fullPage),
               ref: opts.ref?.trim() || undefined,
               element: opts.element?.trim() || undefined,
-              type: opts.type === "jpeg" ? "jpeg" : "png",
+              type,
+              quality: type === "jpeg" && Number.isFinite(quality) ? quality : undefined,
             },
           },
           { timeoutMs: 20000 },
@@ -43,6 +47,33 @@ export function registerBrowserInspectCommands(
           return;
         }
         defaultRuntime.log(`MEDIA:${shortenHomePath(result.path)}`);
+      } catch (err) {
+        defaultRuntime.error(danger(String(err)));
+        defaultRuntime.exit(1);
+      }
+    });
+
+  browser
+    .command("frames-html")
+    .description("Capture HTML for the page and all frames")
+    .option("--target-id <id>", "CDP target id (or unique prefix)")
+    .action(async (opts, cmd) => {
+      const parent = parentOpts(cmd);
+      const profile = parent?.browserProfile;
+      try {
+        const result = await callBrowserRequest(
+          parent,
+          {
+            method: "GET",
+            path: "/frames-html",
+            query: {
+              targetId: opts.targetId?.trim() || undefined,
+              profile,
+            },
+          },
+          { timeoutMs: 20000 },
+        );
+        defaultRuntime.log(JSON.stringify(result, null, 2));
       } catch (err) {
         defaultRuntime.error(danger(String(err)));
         defaultRuntime.exit(1);

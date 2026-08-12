@@ -56,6 +56,21 @@ Options:
 
 ---
 
+## attach
+
+Usage: clawser browser attach [options] [urlContains]
+
+Attach Clawser to Chrome tab(s)
+
+Arguments:
+  urlContains  Attach tabs whose URL contains this text
+
+Options:
+  --all        Attach all ordinary Chrome tabs (default: false)
+  -h, --help   display help for command
+
+---
+
 ## tab
 
 Usage: clawser browser tab [options] [command]
@@ -183,7 +198,20 @@ Options:
   --ref <ref>           ARIA ref from ai snapshot
   --element <selector>  CSS selector for element screenshot
   --type <png|jpeg>     Output type (default: png) (default: "png")
+  --quality <0-100>     JPEG quality (default: 85) (default: "85")
   -h, --help            display help for command
+
+---
+
+## frames-html
+
+Usage: clawser browser frames-html [options]
+
+Capture HTML for the page and all frames
+
+Options:
+  --target-id <id>  CDP target id (or unique prefix)
+  -h, --help        display help for command
 
 ---
 

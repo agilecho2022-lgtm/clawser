@@ -496,6 +496,42 @@ function getTabByTargetId(targetId) {
   return null
 }
 
+function isAttachableTabUrl(url) {
+  return typeof url === 'string' && (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('file://')
+  )
+}
+
+function tabMatchesUrlContains(tab, urlContains) {
+  const needle = String(urlContains || '').trim().toLowerCase()
+  if (!needle) return false
+  return String(tab?.url || '').toLowerCase().includes(needle)
+}
+
+async function attachTabForRelay(tab) {
+  if (!tab?.id) return null
+  const existing = tabs.get(tab.id)
+  if (existing?.state === 'connected' && existing.targetId) {
+    setBadge(tab.id, 'on')
+    return {
+      targetId: existing.targetId,
+      title: tab.title || '',
+      url: tab.url || '',
+      type: 'page',
+    }
+  }
+
+  const attached = await attachTab(tab.id)
+  return {
+    targetId: attached.targetId,
+    title: tab.title || '',
+    url: tab.url || '',
+    type: 'page',
+  }
+}
+
 async function attachTab(tabId, opts = {}) {
   const debuggee = { tabId }
   await chrome.debugger.attach(debuggee, '1.3')
@@ -593,6 +629,33 @@ async function detachTab(tabId, reason) {
   await persistState()
 }
 
+async function autoAttachOpenedTab(tab) {
+  const tabId = tab?.id
+  const openerTabId = tab?.openerTabId
+  if (!tabId || !openerTabId) return
+  if (tabs.get(openerTabId)?.state !== 'connected') return
+  if (tabs.has(tabId) || tabOperationLocks.has(tabId)) return
+
+  tabOperationLocks.add(tabId)
+  try {
+    await ensureRelayConnection()
+    const delays = [100, 250, 500, 1000, 2000]
+    for (const delay of delays) {
+      await sleep(delay)
+      const current = await chrome.tabs.get(tabId).catch(() => null)
+      if (!current?.id) return
+      if (!isAttachableTabUrl(current.url)) continue
+      await attachTabForRelay(current)
+      await reannounceAttachedTabs()
+      return
+    }
+  } catch (err) {
+    console.warn('auto attach opened tab failed', tabId, err instanceof Error ? err.message : String(err))
+  } finally {
+    tabOperationLocks.delete(tabId)
+  }
+}
+
 async function connectOrToggleForActiveTab() {
   const [active] = await chrome.tabs.query({ active: true, currentWindow: true })
   const tabId = active?.id
@@ -660,6 +723,41 @@ async function handleForwardCdpCommand(msg) {
     await new Promise((r) => setTimeout(r, 100))
     const attached = await attachTab(tab.id)
     return { targetId: attached.targetId }
+  }
+
+  if (method === 'Clawser.attachActiveTab') {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.id) throw new Error('No active tab')
+    await ensureRelayConnection()
+    const attached = await attachTabForRelay(tab)
+    if (!attached?.targetId) throw new Error('Failed to attach active tab')
+    await reannounceAttachedTabs()
+    return { targetId: attached.targetId }
+  }
+
+  if (method === 'Clawser.attachTabs') {
+    const urlContains = typeof params?.urlContains === 'string' ? params.urlContains.trim() : ''
+    const all = params?.all === true
+    const candidates = (await chrome.tabs.query({}))
+      .filter((tab) => tab?.id && isAttachableTabUrl(tab.url))
+      .filter((tab) => all || tabMatchesUrlContains(tab, urlContains))
+
+    if (!all && urlContains && candidates.length === 0) {
+      throw new Error(`No tabs matching ${urlContains}`)
+    }
+
+    await ensureRelayConnection()
+    const attachedTabs = []
+    for (const tab of candidates) {
+      try {
+        const attached = await attachTabForRelay(tab)
+        if (attached) attachedTabs.push(attached)
+      } catch (err) {
+        console.warn('attach tab failed', tab.id, err instanceof Error ? err.message : String(err))
+      }
+    }
+    await reannounceAttachedTabs()
+    return { tabs: attachedTabs }
   }
 
   const bySession = sessionId ? getTabBySessionId(sessionId) : null
@@ -864,6 +962,8 @@ async function onDebuggerDetach(source, reason) {
 }
 
 // Tab lifecycle listeners — clean up stale entries.
+chrome.tabs.onCreated.addListener((tab) => void whenReady(() => autoAttachOpenedTab(tab)))
+
 chrome.tabs.onRemoved.addListener((tabId) => void whenReady(() => {
   reattachPending.delete(tabId)
   if (!tabs.has(tabId)) return

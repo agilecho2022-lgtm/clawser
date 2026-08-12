@@ -10,7 +10,7 @@
     "128": "icons/icon128.png"
   },
   "permissions": ["debugger", "tabs", "activeTab", "storage", "alarms", "webNavigation"],
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },
   "action": {
     "default_title": "Clawser Browser Relay (click to attach/detach)",

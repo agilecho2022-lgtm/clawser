@@ -4,12 +4,15 @@ import { describe, expect, it } from "vitest";
 
 type ExtensionManifest = {
   background?: { service_worker?: string; type?: string };
+  host_permissions?: string[];
   permissions?: string[];
 };
 
 function readManifest(): ExtensionManifest {
   const assetPath = resolve(process.cwd(), "assets/chrome-extension/manifest.json");
-  const path = existsSync(assetPath) ? assetPath : resolve(process.cwd(), "chrome-extension/manifest.json");
+  const path = existsSync(assetPath)
+    ? assetPath
+    : resolve(process.cwd(), "chrome-extension/manifest.json");
   return JSON.parse(readFileSync(path, "utf8")) as ExtensionManifest;
 }
 
@@ -26,5 +29,10 @@ describe("chrome extension manifest", () => {
     expect(permissions).toContain("webNavigation");
     expect(permissions).toContain("storage");
     expect(permissions).toContain("debugger");
+  });
+
+  it("requests full host access for browser automation", () => {
+    const hostPermissions = readManifest().host_permissions ?? [];
+    expect(hostPermissions).toContain("<all_urls>");
   });
 });

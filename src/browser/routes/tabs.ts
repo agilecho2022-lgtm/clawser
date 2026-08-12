@@ -186,6 +186,24 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
           return res.json({ ok: true, tabs });
         }
 
+        if (action === "attach-active") {
+          await profileCtx.ensureBrowserAvailable();
+          const tab = await profileCtx.attachActiveTab();
+          return res.json({ ok: true, tab });
+        }
+
+        if (action === "attach") {
+          await profileCtx.ensureBrowserAvailable();
+          const rawUrlContains = toStringOrEmpty(
+            (req.body as { urlContains?: unknown })?.urlContains,
+          );
+          const tabs = await profileCtx.attachTabs({
+            all: (req.body as { all?: unknown })?.all === true,
+            urlContains: rawUrlContains || undefined,
+          });
+          return res.json({ ok: true, tabs });
+        }
+
         if (action === "new") {
           await profileCtx.ensureBrowserAvailable();
           const tab = await profileCtx.openTab("about:blank");

@@ -59,6 +59,7 @@
     "json5": "^2.2.3",
     "jszip": "^3.10.1",
     "osc-progress": "^0.3.0",
+    "playwright": "1.58.2",
     "playwright-core": "1.58.2",
     "sharp": "^0.34.5",
     "tslog": "^4.10.2",

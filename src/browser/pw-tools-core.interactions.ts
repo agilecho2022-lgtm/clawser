@@ -480,6 +480,7 @@ export async function takeScreenshotViaPlaywright(opts: {
   element?: string;
   fullPage?: boolean;
   type?: "png" | "jpeg";
+  quality?: number;
 }): Promise<{ buffer: Buffer }> {
   const page = await getPageForTargetId(opts);
   ensurePageState(page);
@@ -490,7 +491,10 @@ export async function takeScreenshotViaPlaywright(opts: {
       throw new Error("fullPage is not supported for element screenshots");
     }
     const locator = refLocator(page, opts.ref);
-    const buffer = await locator.screenshot({ type });
+    const buffer = await locator.screenshot({
+      type,
+      ...(type === "jpeg" ? { quality: opts.quality } : {}),
+    });
     return { buffer };
   }
   if (opts.element) {
@@ -498,12 +502,16 @@ export async function takeScreenshotViaPlaywright(opts: {
       throw new Error("fullPage is not supported for element screenshots");
     }
     const locator = page.locator(opts.element).first();
-    const buffer = await locator.screenshot({ type });
+    const buffer = await locator.screenshot({
+      type,
+      ...(type === "jpeg" ? { quality: opts.quality } : {}),
+    });
     return { buffer };
   }
   const buffer = await page.screenshot({
     type,
     fullPage: Boolean(opts.fullPage),
+    ...(type === "jpeg" ? { quality: opts.quality } : {}),
   });
   return { buffer };
 }

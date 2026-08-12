@@ -1,3 +1,5 @@
+import type { AriaSnapshotNode } from "./cdp.js";
+
 export type RoleRef = {
   role: string;
   name?: string;
@@ -390,9 +392,10 @@ function parseAiSnapshotRef(suffix: string): string | null {
 export function buildRoleSnapshotFromAiSnapshot(
   aiSnapshot: string,
   options: RoleSnapshotOptions = {},
-): { snapshot: string; refs: RoleRefMap } {
+): { snapshot: string; refs: RoleRefMap; ariaNodes: AriaSnapshotNode[] } {
   const lines = String(aiSnapshot ?? "").split("\n");
   const refs: RoleRefMap = {};
+  const ariaNodes = buildAriaNodesFromAiSnapshotLines(lines);
 
   if (options.interactive) {
     const out = buildInteractiveSnapshotLines({
@@ -410,6 +413,7 @@ export function buildRoleSnapshotFromAiSnapshot(
     return {
       snapshot: out.join("\n") || "(no interactive elements)",
       refs,
+      ariaNodes,
     };
   }
 
@@ -450,5 +454,31 @@ export function buildRoleSnapshotFromAiSnapshot(
   return {
     snapshot: options.compact ? compactTree(tree) : tree,
     refs,
+    ariaNodes,
   };
+}
+
+function buildAriaNodesFromAiSnapshotLines(lines: string[]): AriaSnapshotNode[] {
+  const nodes: AriaSnapshotNode[] = [];
+  for (const line of lines) {
+    const match = line.match(/^(\s*-\s*)(\w+)(?:\s+"([^"]*)")?(.*)$/);
+    if (!match) {
+      continue;
+    }
+    const [, , roleRaw, name, suffix] = match;
+    if (roleRaw.startsWith("/")) {
+      continue;
+    }
+    const ref = parseAiSnapshotRef(suffix);
+    if (!ref) {
+      continue;
+    }
+    nodes.push({
+      ref,
+      role: roleRaw.toLowerCase(),
+      name: name ?? "",
+      depth: getIndentLevel(line),
+    });
+  }
+  return nodes;
 }

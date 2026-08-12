@@ -25,6 +25,7 @@ export {
   cookiesGetViaPlaywright,
   cookiesSetViaPlaywright,
   downloadViaPlaywright,
+  dumpFramesHTMLViaPlaywright,
   dragViaPlaywright,
   emulateMediaViaPlaywright,
   evaluateViaPlaywright,

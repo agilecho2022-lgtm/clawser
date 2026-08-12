@@ -100,6 +100,13 @@ export async function snapshotAiViaPlaywright(opts: {
     refs: built.refs,
     mode: "role",
   });
+  if (opts.targetId?.trim()) {
+    rememberAriaRefsForTarget({
+      cdpUrl: opts.cdpUrl,
+      targetId: opts.targetId,
+      nodes: built.ariaNodes,
+    });
+  }
   return truncated ? { snapshot, truncated, refs: built.refs } : { snapshot, refs: built.refs };
 }
 
@@ -141,6 +148,13 @@ export async function snapshotRoleViaPlaywright(opts: {
       refs: built.refs,
       mode: "aria",
     });
+    if (opts.targetId?.trim()) {
+      rememberAriaRefsForTarget({
+        cdpUrl: opts.cdpUrl,
+        targetId: opts.targetId,
+        nodes: built.ariaNodes,
+      });
+    }
     return {
       snapshot: built.snapshot,
       refs: built.refs,

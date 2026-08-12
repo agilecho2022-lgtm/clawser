@@ -63,6 +63,24 @@ describe("browser control server extension profile", () => {
       type: "png",
     });
 
+    const jpegShot = await postJson<{ ok: boolean; path?: string }>(
+      `${base}/screenshot?${profileQuery}`,
+      {
+        type: "jpeg",
+        quality: 60,
+      },
+    );
+    expect(jpegShot.ok).toBe(true);
+    expect(pwMocks.takeScreenshotViaPlaywright).toHaveBeenCalledWith({
+      cdpUrl: relayCdpUrl,
+      targetId: "abcd1234",
+      ref: undefined,
+      element: undefined,
+      fullPage: false,
+      type: "jpeg",
+      quality: 60,
+    });
+
     const click = await postJson<{ ok: boolean }>(`${base}/act?${profileQuery}`, {
       kind: "click",
       ref: "1",

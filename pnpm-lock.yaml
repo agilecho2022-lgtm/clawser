@@ -42,6 +42,9 @@ importers:
       osc-progress:
         specifier: ^0.3.0
         version: 0.3.0
+      playwright:
+        specifier: 1.58.2
+        version: 1.58.2
       playwright-core:
         specifier: 1.58.2
         version: 1.58.2
@@ -3350,7 +3353,6 @@ snapshots:
       playwright-core: 1.58.2
     optionalDependencies:
       fsevents: 2.3.2
-    optional: true
 
   pngjs@7.0.0:
     optional: true

@@ -12,9 +12,31 @@ import {
   originalFetch,
 } from "./server-context.remote-tab-ops.harness.js";
 
+const cdpMocks = vi.hoisted(() => ({
+  attachActiveTabViaCdp: vi.fn<() => Promise<{ targetId: string }>>(async () => {
+    throw new Error("attach active disabled");
+  }),
+  attachTabsViaCdp: vi.fn<() => Promise<{ tabs: Array<{ targetId: string }> }>>(async () => {
+    throw new Error("attach tabs disabled");
+  }),
+}));
+
+vi.mock("./cdp.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./cdp.js")>();
+  return {
+    ...actual,
+    attachActiveTabViaCdp: cdpMocks.attachActiveTabViaCdp,
+    attachTabsViaCdp: cdpMocks.attachTabsViaCdp,
+  };
+});
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
+  cdpMocks.attachActiveTabViaCdp.mockReset();
+  cdpMocks.attachActiveTabViaCdp.mockRejectedValue(new Error("attach active disabled"));
+  cdpMocks.attachTabsViaCdp.mockReset();
+  cdpMocks.attachTabsViaCdp.mockRejectedValue(new Error("attach tabs disabled"));
 });
 
 describe("browser server-context remote profile tab operations", () => {
@@ -229,6 +251,37 @@ describe("browser server-context remote profile tab operations", () => {
 
     const tabs = await remote.listTabs();
     expect(tabs.map((t) => t.targetId)).toEqual(["T1"]);
+  });
+
+  it("attaches the active tab through a browser-scoped CDP command", async () => {
+    cdpMocks.attachActiveTabViaCdp.mockResolvedValueOnce({ targetId: "T-active" });
+
+    const { state, remote } = createRemoteRouteHarness();
+
+    await remote.attachActiveTab();
+
+    expect(cdpMocks.attachActiveTabViaCdp).toHaveBeenCalledWith({
+      cdpUrl: "https://browserless.example/chrome?token=abc",
+    });
+    expect(state.profiles.get("remote")?.lastTargetId).toBe("T-active");
+  });
+
+  it("attaches URL-matched tabs through a browser-scoped CDP command", async () => {
+    cdpMocks.attachTabsViaCdp.mockResolvedValueOnce({
+      tabs: [{ targetId: "T-one" }, { targetId: "T-two" }],
+    });
+
+    const { state, remote } = createRemoteRouteHarness();
+
+    const tabs = await remote.attachTabs({ urlContains: "foo.example.com" });
+
+    expect(cdpMocks.attachTabsViaCdp).toHaveBeenCalledWith({
+      cdpUrl: "https://browserless.example/chrome?token=abc",
+      urlContains: "foo.example.com",
+      all: false,
+    });
+    expect(tabs.map((tab) => tab.targetId)).toEqual(["T-one", "T-two"]);
+    expect(state.profiles.get("remote")?.lastTargetId).toBe("T-two");
   });
 
   it("fails closed for remote tab opens in strict mode without Playwright", async () => {

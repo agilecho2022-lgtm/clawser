@@ -24,7 +24,7 @@ import {
   shouldUsePlaywrightForScreenshot,
 } from "./agent.snapshot.plan.js";
 import type { BrowserResponse, BrowserRouteRegistrar } from "./types.js";
-import { jsonError, toBoolean, toStringOrEmpty } from "./utils.js";
+import { jsonError, toBoolean, toNumber, toStringOrEmpty } from "./utils.js";
 
 async function saveBrowserMediaResponse(params: {
   res: BrowserResponse;
@@ -156,6 +156,10 @@ export function registerBrowserAgentSnapshotRoutes(
     const ref = toStringOrEmpty(body.ref) || undefined;
     const element = toStringOrEmpty(body.element) || undefined;
     const type = body.type === "jpeg" ? "jpeg" : "png";
+    const quality =
+      type === "jpeg"
+        ? Math.max(0, Math.min(100, Math.round(toNumber(body.quality) ?? 85)))
+        : undefined;
 
     if (fullPage && (ref || element)) {
       return jsonError(res, 400, "fullPage is not supported for element screenshots");
@@ -186,6 +190,7 @@ export function registerBrowserAgentSnapshotRoutes(
             element,
             fullPage,
             type,
+            quality,
           });
           buffer = snap.buffer;
         } else {
@@ -193,7 +198,7 @@ export function registerBrowserAgentSnapshotRoutes(
             wsUrl: tab.wsUrl ?? "",
             fullPage,
             format: type,
-            quality: type === "jpeg" ? 85 : undefined,
+            quality,
           });
         }
 
@@ -208,6 +213,29 @@ export function registerBrowserAgentSnapshotRoutes(
           maxBytes: DEFAULT_BROWSER_SCREENSHOT_MAX_BYTES,
           targetId: tab.targetId,
           url: tab.url,
+        });
+      },
+    });
+  });
+
+  app.get("/frames-html", async (req, res) => {
+    const targetId = typeof req.query.targetId === "string" ? req.query.targetId.trim() : "";
+    await withPlaywrightRouteContext({
+      req,
+      res,
+      ctx,
+      targetId: targetId || undefined,
+      feature: "frames-html",
+      run: async ({ tab, cdpUrl, pw }) => {
+        const result = await pw.dumpFramesHTMLViaPlaywright({
+          cdpUrl,
+          targetId: tab.targetId,
+        });
+        res.json({
+          ok: true,
+          targetId: tab.targetId,
+          url: tab.url,
+          ...result,
         });
       },
     });

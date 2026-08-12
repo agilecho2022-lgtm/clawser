@@ -1,6 +1,12 @@
 import { CDP_JSON_NEW_TIMEOUT_MS } from "./cdp-timeouts.js";
 import { fetchJson, fetchOk, normalizeCdpHttpBaseForJsonEndpoints } from "./cdp.helpers.js";
-import { appendCdpPath, createTargetViaCdp, normalizeCdpWsUrl } from "./cdp.js";
+import {
+  appendCdpPath,
+  attachActiveTabViaCdp,
+  attachTabsViaCdp,
+  createTargetViaCdp,
+  normalizeCdpWsUrl,
+} from "./cdp.js";
 import type { ResolvedBrowserProfile } from "./config.js";
 import {
   assertBrowserNavigationAllowed,
@@ -30,6 +36,8 @@ type TabOpsDeps = {
 };
 
 type ProfileTabOps = {
+  attachActiveTab: () => Promise<BrowserTab>;
+  attachTabs: (opts: { all?: boolean; urlContains?: string }) => Promise<BrowserTab[]>;
   listTabs: () => Promise<BrowserTab[]>;
   openTab: (url: string) => Promise<BrowserTab>;
 };
@@ -222,7 +230,51 @@ export function createProfileTabOps({
     };
   };
 
+  const attachActiveTab = async (): Promise<BrowserTab> => {
+    const attached = await attachActiveTabViaCdp({ cdpUrl: profile.cdpUrl });
+    const targetId = attached.targetId;
+    const profileState = getProfileState();
+    profileState.lastTargetId = targetId;
+    const tabs = await listTabs().catch(() => [] as BrowserTab[]);
+    return (
+      tabs.find((tab) => tab.targetId === targetId) ?? {
+        targetId,
+        title: "",
+        url: "",
+        type: "page",
+      }
+    );
+  };
+
+  const attachTabs = async (opts: {
+    all?: boolean;
+    urlContains?: string;
+  }): Promise<BrowserTab[]> => {
+    const attached = await attachTabsViaCdp({
+      cdpUrl: profile.cdpUrl,
+      all: opts.all === true,
+      urlContains: opts.urlContains,
+    });
+    const targetIds = attached.tabs.map((tab) => tab.targetId).filter(Boolean);
+    const profileState = getProfileState();
+    profileState.lastTargetId = targetIds.at(-1) ?? profileState.lastTargetId ?? null;
+    const listedTabs = await listTabs().catch(() => [] as BrowserTab[]);
+    return attached.tabs.map((attachedTab) => {
+      const listed = listedTabs.find((tab) => tab.targetId === attachedTab.targetId);
+      return (
+        listed ?? {
+          targetId: attachedTab.targetId,
+          title: attachedTab.title ?? "",
+          url: attachedTab.url ?? "",
+          type: attachedTab.type ?? "page",
+        }
+      );
+    });
+  };
+
   return {
+    attachActiveTab,
+    attachTabs,
     listTabs,
     openTab,
   };

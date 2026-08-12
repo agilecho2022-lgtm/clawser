@@ -11,4 +11,13 @@ describe("build-macos-pkg.sh", () => {
     expect(script).not.toContain("pkill -f");
     expect(script).toContain("pkill -x clawser-tray");
   });
+
+  it("verifies packaged node_modules symlinks after copying the payload", () => {
+    const script = fs.readFileSync(path.join(root, "scripts/build-macos-pkg.sh"), "utf8");
+
+    expect(script).toContain("verify-portable-node-modules.mjs");
+    expect(script.indexOf('cp -R "$PAYLOAD_DIR/." "$TARGET_DIR/"')).toBeLessThan(
+      script.indexOf("verify-portable-node-modules.mjs"),
+    );
+  });
 });

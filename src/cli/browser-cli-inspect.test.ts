@@ -29,6 +29,16 @@ const sharedMocks = vi.hoisted(() => ({
       if (params.path === "/screenshot") {
         return { path: "/tmp/clawser-shot.png" };
       }
+      if (params.path === "/frames-html") {
+        return {
+          ok: true,
+          targetId: "t1",
+          url: "https://example.com",
+          frames: [
+            { index: 0, name: "", url: "https://example.com", parentIndex: null, html: "<html></html>" },
+          ],
+        };
+      }
       const format = params.query?.format === "aria" ? "aria" : "ai";
       if (format === "aria") {
         return {
@@ -202,12 +212,16 @@ describe("browser cli snapshot defaults", () => {
   });
 
   it("sends screenshot request with trimmed target id and jpeg type", async () => {
-    const params = await runBrowserInspect(["screenshot", " tab-1 ", "--type", "jpeg"], true);
+    const params = await runBrowserInspect(
+      ["screenshot", " tab-1 ", "--type", "jpeg", "--quality", "60"],
+      true,
+    );
     expect(params?.path).toBe("/screenshot");
     expect((params as { body?: Record<string, unknown> } | undefined)?.body).toMatchObject({
       targetId: "tab-1",
       type: "jpeg",
       fullPage: false,
+      quality: 60,
     });
   });
 
@@ -222,6 +236,17 @@ describe("browser cli snapshot defaults", () => {
       type: "png",
     });
     expect(runtime.log).toHaveBeenCalledWith("MEDIA:/tmp/clawser-shot.png");
+  });
+
+  it("sends frames-html request with target id", async () => {
+    const params = await runBrowserInspect(["frames-html", "--target-id", " tab-1 "], true);
+    expect(params?.path).toBe("/frames-html");
+    expect(params?.query).toMatchObject({
+      targetId: "tab-1",
+    });
+    expect(runtime.log).toHaveBeenCalledWith(
+      expect.stringContaining('"frames"'),
+    );
   });
 
   it("sends full-page screenshot request", async () => {

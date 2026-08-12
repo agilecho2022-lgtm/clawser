@@ -240,6 +240,7 @@ export async function browserScreenshotAction(
     ref?: string;
     element?: string;
     type?: "png" | "jpeg";
+    quality?: number;
     profile?: string;
   },
 ): Promise<BrowserActionPathResult> {
@@ -253,6 +254,7 @@ export async function browserScreenshotAction(
       ref: opts.ref,
       element: opts.element,
       type: opts.type,
+      quality: opts.quality,
     }),
     timeoutMs: 20000,
   });

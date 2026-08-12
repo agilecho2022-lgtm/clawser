@@ -139,6 +139,63 @@ export async function createTargetViaCdp(opts: {
   });
 }
 
+export async function attachActiveTabViaCdp(opts: {
+  cdpUrl: string;
+}): Promise<{ targetId: string }> {
+  const wsUrl = await resolveBrowserWsUrl(opts.cdpUrl);
+  return await withCdpSocket(wsUrl, async (send) => {
+    const attached = (await send("Clawser.attachActiveTab")) as { targetId?: string };
+    const targetId = String(attached?.targetId ?? "").trim();
+    if (!targetId) {
+      throw new Error("CDP Clawser.attachActiveTab returned no targetId");
+    }
+    return { targetId };
+  });
+}
+
+type AttachedTabResult = {
+  targetId: string;
+  title?: string;
+  url?: string;
+  type?: string;
+};
+
+export async function attachTabsViaCdp(opts: {
+  cdpUrl: string;
+  all?: boolean;
+  urlContains?: string;
+}): Promise<{ tabs: AttachedTabResult[] }> {
+  const wsUrl = await resolveBrowserWsUrl(opts.cdpUrl);
+  return await withCdpSocket(wsUrl, async (send) => {
+    const attached = (await send("Clawser.attachTabs", {
+      all: opts.all === true,
+      urlContains: opts.urlContains,
+    })) as { tabs?: AttachedTabResult[] };
+    const tabs = Array.isArray(attached?.tabs) ? attached.tabs : [];
+    return {
+      tabs: tabs.filter((tab) => Boolean(String(tab?.targetId ?? "").trim())),
+    };
+  });
+}
+
+async function resolveBrowserWsUrl(cdpUrl: string): Promise<string> {
+  let wsUrl: string;
+  if (isWebSocketUrl(cdpUrl)) {
+    wsUrl = cdpUrl;
+  } else {
+    const version = await fetchJson<{ webSocketDebuggerUrl?: string }>(
+      appendCdpPath(cdpUrl, "/json/version"),
+      1500,
+    );
+    const wsUrlRaw = String(version?.webSocketDebuggerUrl ?? "").trim();
+    wsUrl = wsUrlRaw ? normalizeCdpWsUrl(wsUrlRaw, cdpUrl) : "";
+    if (!wsUrl) {
+      throw new Error("CDP /json/version missing webSocketDebuggerUrl");
+    }
+  }
+  return wsUrl;
+}
+
 export type CdpRemoteObject = {
   type: string;
   subtype?: string;

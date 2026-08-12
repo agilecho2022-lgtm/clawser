@@ -16,10 +16,59 @@ describe("chrome extension background worker", () => {
     const source = readBackgroundWorker();
 
     expect(source.indexOf("method === 'Target.createTarget'")).toBeGreaterThanOrEqual(0);
+    expect(source.indexOf("method === 'Clawser.attachActiveTab'")).toBeGreaterThanOrEqual(0);
     expect(source.indexOf("if (!tabId) throw new Error")).toBeGreaterThanOrEqual(0);
     expect(source.indexOf("method === 'Target.createTarget'")).toBeLessThan(
       source.indexOf("if (!tabId) throw new Error"),
     );
+    expect(source.indexOf("method === 'Clawser.attachActiveTab'")).toBeLessThan(
+      source.indexOf("if (!tabId) throw new Error"),
+    );
+  });
+
+  it("implements active-tab attach via chrome.tabs.query and attachTab", () => {
+    const source = readBackgroundWorker();
+    const attachStart = source.indexOf("method === 'Clawser.attachActiveTab'");
+    const attachEnd = source.indexOf("const bySession", attachStart);
+    const attachBlock = source.slice(attachStart, attachEnd);
+
+    expect(attachStart).toBeGreaterThanOrEqual(0);
+    expect(attachEnd).toBeGreaterThan(attachStart);
+    expect(attachBlock).toContain("chrome.tabs.query({ active: true, currentWindow: true })");
+    expect(attachBlock).toContain("await ensureRelayConnection()");
+    expect(attachBlock).toContain("await reannounceAttachedTabs()");
+    expect(attachBlock).toContain("await attachTabForRelay(tab)");
+  });
+
+  it("implements URL and all-tab attach by querying Chrome tabs", () => {
+    const source = readBackgroundWorker();
+    const attachStart = source.indexOf("method === 'Clawser.attachTabs'");
+    const attachEnd = source.indexOf("const bySession", attachStart);
+    const attachBlock = source.slice(attachStart, attachEnd);
+
+    expect(attachStart).toBeGreaterThanOrEqual(0);
+    expect(attachEnd).toBeGreaterThan(attachStart);
+    expect(attachBlock).toContain("chrome.tabs.query({})");
+    expect(attachBlock).toContain("urlContains");
+    expect(attachBlock).toContain("await attachTabForRelay(tab)");
+    expect(source).toContain("const attached = await attachTab(tab.id)");
+  });
+
+  it("auto-attaches tabs opened by an already attached tab", () => {
+    const source = readBackgroundWorker();
+    const helperStart = source.indexOf("async function autoAttachOpenedTab");
+    const helperEnd = source.indexOf("async function connectOrToggleForActiveTab", helperStart);
+    const helperBlock = source.slice(helperStart, helperEnd);
+    const listenerStart = source.indexOf("chrome.tabs.onCreated.addListener");
+
+    expect(helperStart).toBeGreaterThanOrEqual(0);
+    expect(helperEnd).toBeGreaterThan(helperStart);
+    expect(listenerStart).toBeGreaterThanOrEqual(0);
+    expect(source).toContain("chrome.tabs.onCreated.addListener((tab) => void whenReady(() => autoAttachOpenedTab(tab)))");
+    expect(helperBlock).toContain("openerTabId");
+    expect(helperBlock).toContain("tabs.get(openerTabId)?.state !== 'connected'");
+    expect(helperBlock).toContain("await attachTabForRelay");
+    expect(helperBlock).toContain("await reannounceAttachedTabs()");
   });
 
   it("connects the relay on startup before checking for attached tabs", () => {
