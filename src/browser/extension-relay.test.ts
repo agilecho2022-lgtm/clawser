@@ -125,6 +125,78 @@ function createMessageQueue(ws: WebSocket) {
   return { next };
 }
 
+// performHandshakeWithQueue 用已注册好 listener 的消息队列完成协议握手：
+// 等 relay 的 connect.challenge，回 connect 请求（声明 minProtocol–maxProtocol）。
+// queue 必须在 waitForOpen 之前创建——relay 在连接建立后立即发 challenge，
+// open 之后才注册 listener 会因回环速度极快而丢失该消息。
+async function performHandshakeWithQueue(
+  ws: WebSocket,
+  queue: ReturnType<typeof createMessageQueue>,
+  minProtocol = 3,
+  maxProtocol = 3,
+): Promise<{ ok: boolean; error?: string }> {
+  const challengeRaw = await queue.next();
+  const challenge = JSON.parse(challengeRaw) as {
+    type?: string;
+    event?: string;
+    payload?: { nonce?: string };
+  };
+  if (challenge?.type !== "event" || challenge?.event !== "connect.challenge") {
+    throw new Error(`expected connect.challenge, got ${challengeRaw}`);
+  }
+  ws.send(
+    JSON.stringify({
+      type: "req",
+      id: "handshake-1",
+      method: "connect",
+      params: {
+        minProtocol,
+        maxProtocol,
+        client: { id: "test-extension", version: "1.0.0", platform: "chrome-extension" },
+        nonce: challenge.payload?.nonce,
+      },
+    }),
+  );
+  const resRaw = await queue.next();
+  const res = JSON.parse(resRaw) as { type?: string; ok?: boolean; error?: { message?: string } };
+  return { ok: res?.ok === true, error: res?.error?.message };
+}
+
+// connectExtensionAt 建立扩展连接并完成协议握手（默认声明协议 3–3）。
+// useHeaders=true 时用 relayAuthHeaders（与 extensionWsUrl 的 token 等效）。
+async function connectExtensionAt(
+  port: number | string,
+  useHeaders = false,
+): Promise<WebSocket> {
+  const ws = useHeaders
+    ? new WebSocket(`ws://127.0.0.1:${port}/extension`, {
+        headers: relayAuthHeaders(`ws://127.0.0.1:${port}/extension`),
+      })
+    : new WebSocket(extensionWsUrl(port));
+  const queue = createMessageQueue(ws);
+  await waitForOpen(ws);
+  const handshake = await performHandshakeWithQueue(ws, queue);
+  if (!handshake.ok) {
+    ws.close();
+    throw new Error(`extension handshake failed: ${handshake.error}`);
+  }
+  return ws;
+}
+
+// connectExtensionExpectRejection 用于拒绝场景：连接、完成握手（声明不匹配的版本）、
+// 返回握手结果与连接（调用方自行断言 result.ok === false）。
+async function connectExtensionExpectRejection(
+  port: number | string,
+  minProtocol: number,
+  maxProtocol: number,
+): Promise<{ ws: WebSocket; result: { ok: boolean; error?: string } }> {
+  const ws = new WebSocket(extensionWsUrl(port));
+  const queue = createMessageQueue(ws);
+  await waitForOpen(ws);
+  const result = await performHandshakeWithQueue(ws, queue, minProtocol, maxProtocol);
+  return { ws, result };
+}
+
 async function waitForListMatch<T>(
   fetchList: () => Promise<T>,
   predicate: (value: T) => boolean,
@@ -152,9 +224,11 @@ describe("chrome extension relay server", () => {
     envSnapshot = captureEnv([
       "OPENCLAW_EXTENSION_RELAY_RECONNECT_GRACE_MS",
       "OPENCLAW_EXTENSION_RELAY_COMMAND_RECONNECT_WAIT_MS",
+      "OPENCLAW_EXTENSION_RELAY_HANDSHAKE_ERROR_TTL_MS",
     ]);
     delete process.env.OPENCLAW_EXTENSION_RELAY_RECONNECT_GRACE_MS;
     delete process.env.OPENCLAW_EXTENSION_RELAY_COMMAND_RECONNECT_WAIT_MS;
+    delete process.env.OPENCLAW_EXTENSION_RELAY_HANDSHAKE_ERROR_TTL_MS;
   });
 
   afterEach(async () => {
@@ -187,8 +261,7 @@ describe("chrome extension relay server", () => {
     const port = await getFreePort();
     cdpUrl = `http://127.0.0.1:${port}`;
     await ensureChromeExtensionRelayServer({ cdpUrl });
-    const ext = new WebSocket(extensionWsUrl(port));
-    await waitForOpen(ext);
+    const ext = await connectExtensionAt(port);
     return { port, ext };
   }
 
@@ -240,8 +313,7 @@ describe("chrome extension relay server", () => {
     };
     expect(v1.webSocketDebuggerUrl).toBeUndefined();
 
-    const ext = new WebSocket(extensionWsUrl(port));
-    await waitForOpen(ext);
+    const ext = await connectExtensionAt(port);
 
     const v2 = (await fetch(`${cdpUrl}/json/version`, {
       headers: relayAuthHeaders(cdpUrl),
@@ -387,10 +459,7 @@ describe("chrome extension relay server", () => {
     const ext1Closed = new Promise<void>((resolve) => ext1.once("close", () => resolve()));
 
     ext1.close();
-    const ext2 = new WebSocket(`ws://127.0.0.1:${port}/extension`, {
-      headers: relayAuthHeaders(`ws://127.0.0.1:${port}/extension`),
-    });
-    await waitForOpen(ext2);
+    const ext2 = await connectExtensionAt(port, true);
     await ext1Closed;
 
     const status = (await fetch(`${cdpUrl}/extension/status`).then((r) => r.json())) as {
@@ -399,6 +468,136 @@ describe("chrome extension relay server", () => {
     expect(status.connected).toBe(true);
 
     ext2.close();
+  });
+
+  it("rejects handshake with mismatched protocol version and reports the reason", async () => {
+    const port = await getFreePort();
+    cdpUrl = `http://127.0.0.1:${port}`;
+    await ensureChromeExtensionRelayServer({ cdpUrl });
+
+    const { ws: ext, result } = await connectExtensionExpectRejection(port, 999, 999);
+    expect(result.ok).toBe(false);
+    expect(result.error ?? "").toContain("扩展协议版本不匹配");
+    expect(result.error ?? "").toContain("请升级 BillRPA 客户端");
+
+    await waitForClose(ext);
+
+    const status = (await fetch(`${cdpUrl}/extension/status`).then((r) => r.json())) as {
+      connected?: boolean;
+      error?: string;
+    };
+    expect(status.connected).toBe(false);
+    expect(status.error ?? "").toContain("扩展协议版本不匹配");
+
+    ext.close();
+  });
+
+  it("rejects handshake with missing protocol version", async () => {
+    const port = await getFreePort();
+    cdpUrl = `http://127.0.0.1:${port}`;
+    await ensureChromeExtensionRelayServer({ cdpUrl });
+
+    const { ws: ext, result } = await connectExtensionExpectRejection(port, Number.NaN, Number.NaN);
+    expect(result.ok).toBe(false);
+
+    await waitForClose(ext);
+  });
+
+  // C25 第 1+3 条：旧连接的延迟响应（带旧 nonce）不得污染当前连接的握手状态。
+  // 场景：连接 A 收 challenge 后断开，连接 B 建立；从 B 发送带「A 的 nonce」的
+  // connect（模拟跨连接串扰），必须被拒绝且 B 不被标记为已握手；B 用正确 nonce
+  // 重新握手后连接才成立。
+  it("ignores stale connect responses from a previous connection", async () => {
+    const port = await getFreePort();
+    cdpUrl = `http://127.0.0.1:${port}`;
+    await ensureChromeExtensionRelayServer({ cdpUrl });
+
+    // 连接 A：收到 challenge，保存 nonce，然后断开（模拟 MV3 worker 重启）。
+    const extA = new WebSocket(extensionWsUrl(port));
+    const queueA = createMessageQueue(extA);
+    await waitForOpen(extA);
+    const challengeA = JSON.parse(await queueA.next()) as { payload?: { nonce?: string } };
+    const staleNonce = challengeA.payload?.nonce ?? "";
+    expect(staleNonce).not.toBe("");
+    extA.close();
+    await waitForClose(extA);
+
+    // 连接 B：收到新 challenge。
+    const extB = new WebSocket(extensionWsUrl(port));
+    const queueB = createMessageQueue(extB);
+    await waitForOpen(extB);
+    const challengeB = JSON.parse(await queueB.next()) as { payload?: { nonce?: string } };
+    const currentNonce = challengeB.payload?.nonce ?? "";
+    expect(currentNonce).not.toBe("");
+    expect(currentNonce).not.toBe(staleNonce);
+
+    // 从 B 发送带旧 nonce 的 connect（版本合法 3–3）——必须被拒。
+    extB.send(
+      JSON.stringify({
+        type: "req",
+        id: "stale-connect",
+        method: "connect",
+        params: { minProtocol: 3, maxProtocol: 3, nonce: staleNonce },
+      }),
+    );
+    const staleRes = JSON.parse(await queueB.next()) as { ok?: boolean; error?: { message?: string } };
+    expect(staleRes.ok).toBe(false);
+    expect(staleRes.error?.message).toBe("invalid nonce");
+
+    // 旧 nonce 响应不得把 B 标记为已握手。
+    const statusBefore = (await fetch(`${cdpUrl}/extension/status`).then((r) => r.json())) as {
+      connected?: boolean;
+    };
+    expect(statusBefore.connected).toBe(false);
+
+    // B 用正确 nonce 重新握手——成功。
+    extB.send(
+      JSON.stringify({
+        type: "req",
+        id: "good-connect",
+        method: "connect",
+        params: { minProtocol: 3, maxProtocol: 3, nonce: currentNonce },
+      }),
+    );
+    const goodRes = JSON.parse(await queueB.next()) as { ok?: boolean };
+    expect(goodRes.ok).toBe(true);
+
+    const statusAfter = (await fetch(`${cdpUrl}/extension/status`).then((r) => r.json())) as {
+      connected?: boolean;
+    };
+    expect(statusAfter.connected).toBe(true);
+
+    extB.close();
+  });
+
+  // C25 第 2 条：握手失败后若扩展不再重连（如被卸载），错误应在一段时间后自动
+  // 清除，/extension/status 不再返回陈旧的 error，避免现场被「升级客户端」误导。
+  it("clears stale handshake error after disconnect without a new connection", async () => {
+    process.env.OPENCLAW_EXTENSION_RELAY_HANDSHAKE_ERROR_TTL_MS = "80";
+
+    const port = await getFreePort();
+    cdpUrl = `http://127.0.0.1:${port}`;
+    await ensureChromeExtensionRelayServer({ cdpUrl });
+
+    const { ws: ext, result } = await connectExtensionExpectRejection(port, 999, 999);
+    expect(result.ok).toBe(false);
+    await waitForClose(ext);
+
+    const statusWithError = (await fetch(`${cdpUrl}/extension/status`).then((r) => r.json())) as {
+      connected?: boolean;
+      error?: string;
+    };
+    expect(statusWithError.connected).toBe(false);
+    expect(statusWithError.error ?? "").toContain("扩展协议版本不匹配");
+
+    // 等 TTL 过期（80ms）后再等一轮探测余量。
+    await new Promise((r) => setTimeout(r, 250));
+    const statusAfter = (await fetch(`${cdpUrl}/extension/status`).then((r) => r.json())) as {
+      connected?: boolean;
+      error?: string;
+    };
+    expect(statusAfter.connected).toBe(false);
+    expect(statusAfter.error ?? "").toBe("");
   });
 
   it("keeps CDP clients alive across a brief extension reconnect", async () => {
@@ -416,10 +615,7 @@ describe("chrome extension relay server", () => {
     const ext1Closed = waitForClose(ext1, 2_000);
     ext1.close();
     await ext1Closed;
-    const ext2 = new WebSocket(`ws://127.0.0.1:${port}/extension`, {
-      headers: relayAuthHeaders(`ws://127.0.0.1:${port}/extension`),
-    });
-    await waitForOpen(ext2);
+    const ext2 = await connectExtensionAt(port, true);
     expect(cdpClosed).toBe(false);
 
     cdp.close();
@@ -520,6 +716,7 @@ describe("chrome extension relay server", () => {
     });
     const ext2Queue = createMessageQueue(ext2);
     await waitForOpen(ext2);
+    await performHandshakeWithQueue(ext2, ext2Queue);
 
     while (true) {
       const msg = JSON.parse(await ext2Queue.next(4_000)) as {
@@ -1049,10 +1246,7 @@ describe("chrome extension relay server", () => {
       );
 
       // Reconnect and re-announce the same tab (simulates reannounceAttachedTabs).
-      const ext2 = new WebSocket(`ws://127.0.0.1:${port}/extension`, {
-        headers: relayAuthHeaders(`ws://127.0.0.1:${port}/extension`),
-      });
-      await waitForOpen(ext2);
+      const ext2 = await connectExtensionAt(port, true);
 
       ext2.send(
         JSON.stringify({
@@ -1133,10 +1327,7 @@ describe("chrome extension relay server", () => {
       expect(listDuringGrace.some((t) => t.id === "t20")).toBe(true);
 
       // Reconnect within grace and re-announce with updated info.
-      const ext2 = new WebSocket(`ws://127.0.0.1:${port}/extension`, {
-        headers: relayAuthHeaders(`ws://127.0.0.1:${port}/extension`),
-      });
-      await waitForOpen(ext2);
+      const ext2 = await connectExtensionAt(port, true);
 
       ext2.send(
         JSON.stringify({

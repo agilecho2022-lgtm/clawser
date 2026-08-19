@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -9,6 +10,10 @@ import WebSocket, { WebSocketServer } from "ws";
 import { isLoopbackAddress, isLoopbackHost } from "../gateway/net.js";
 import { rawDataToString } from "../infra/ws.js";
 import { createRelayAuthToken, probeClawserRelay } from "./extension-relay-auth.js";
+
+function randomNonce(): string {
+  return randomBytes(16).toString("hex");
+}
 
 type CdpCommand = {
   id: number;
@@ -50,10 +55,35 @@ type ExtensionForwardEventMessage = {
 type ExtensionPingMessage = { method: "ping" };
 type ExtensionPongMessage = { method: "pong" };
 
+// 扩展 ↔ 中继的应用层协议版本范围（与扩展 background.js 的
+// minProtocol / maxProtocol 声明对应）。协议消息格式或方法不兼容时提升版本；
+// 上架后 Edge 会自动更新扩展，此处在握手时校验，协议不匹配的连接被显式
+// 拒绝并给出原因，而不是静默接受导致「连上了却接管不了页面」。
+const RELAY_PROTOCOL_MIN = 3;
+const RELAY_PROTOCOL_MAX = 3;
+const EXTENSION_HANDSHAKE_TIMEOUT_MS = 10_000;
+// 握手失败原因在无连接状态下的保留时长（过期自动清除，避免误导现场排查）。
+// 测试可用 OPENCLAW_EXTENSION_RELAY_HANDSHAKE_ERROR_TTL_MS 缩短。
+const DEFAULT_HANDSHAKE_ERROR_TTL_MS = 60_000;
+
+// ExtensionConnectRequest 是扩展握手时发送的 connect 请求。
+type ExtensionConnectRequest = {
+  type: "req";
+  id: string;
+  method: "connect";
+  params?: {
+    minProtocol?: number;
+    maxProtocol?: number;
+    client?: { id?: string; version?: string; platform?: string };
+    nonce?: string;
+  };
+};
+
 type ExtensionMessage =
   | ExtensionResponseMessage
   | ExtensionForwardEventMessage
-  | ExtensionPongMessage;
+  | ExtensionPongMessage
+  | ExtensionConnectRequest;
 
 type TargetInfo = {
   targetId: string;
@@ -296,6 +326,10 @@ export async function ensureChromeExtensionRelayServer(opts: {
     "OPENCLAW_EXTENSION_RELAY_COMMAND_RECONNECT_WAIT_MS",
     DEFAULT_EXTENSION_COMMAND_RECONNECT_WAIT_MS,
   );
+  const handshakeErrorTtlMs = envMsOrDefault(
+    "OPENCLAW_EXTENSION_RELAY_HANDSHAKE_ERROR_TTL_MS",
+    DEFAULT_HANDSHAKE_ERROR_TTL_MS,
+  );
 
   const initPromise = (async (): Promise<ChromeExtensionRelayServer> => {
     const relayAuthToken = createRelayAuthToken();
@@ -306,7 +340,17 @@ export async function ensureChromeExtensionRelayServer(opts: {
     const connectedTargets = new Map<string, ConnectedTarget>();
     let downloadBehavior: DownloadBehavior | null = null;
     const downloadsByGuid = new Map<string, DownloadRecord>();
-    const extensionConnected = () => extensionWs?.readyState === WebSocket.OPEN;
+    // 握手状态：连接建立后 relay 发 connect.challenge（携带 nonce），扩展回 connect
+    // 请求（回传 nonce 并声明协议版本范围），校验通过后连接才被视为已建立。
+    let extensionHandshakeDone = false;
+    let extensionHandshakeError: string | null = null;
+    let extensionHandshakeErrorTimer: NodeJS.Timeout | null = null;
+    let extensionHandshakeNonce: string | null = null;
+    let extensionHandshakeTimer: NodeJS.Timeout | null = null;
+    // socket 层：WS 是否 OPEN（单连接限制、传输层判断用）。
+    const extensionSocketActive = () => extensionWs?.readyState === WebSocket.OPEN;
+    // 应用层：WS OPEN 且协议握手已通过（对外状态、能力判断用）。
+    const extensionConnected = () => extensionSocketActive() && extensionHandshakeDone;
     const hasConnectedTargets = () => connectedTargets.size > 0;
     let extensionDisconnectCleanupTimer: NodeJS.Timeout | null = null;
     const extensionReconnectWaiters = new Set<(connected: boolean) => void>();
@@ -399,6 +443,95 @@ export async function ensureChromeExtensionRelayServer(opts: {
         }, 30_000);
         pendingExtension.set(payload.id, { resolve, reject, timer });
       });
+    };
+
+    // 记录握手失败原因，并在一段无连接时间后自动清除（陈旧 error 不永久误导现场：
+    // 若用户握手失败后卸载了扩展，托盘不应一直提示「升级客户端」）。
+    // 不采用「断开即清」：握手失败会被 relay 以 1008 主动关闭，断开即清会让
+    // 托盘几乎永远看不到原因（重连循环中 socket 活动窗口只有毫秒级），C24 的
+    // 「显示可行动原因」目标就落空了。保留 + 短 TTL 同时满足两者。
+    const setHandshakeError = (detail: string) => {
+      extensionHandshakeError = detail;
+      if (extensionHandshakeErrorTimer) {
+        clearTimeout(extensionHandshakeErrorTimer);
+      }
+      extensionHandshakeErrorTimer = setTimeout(() => {
+        extensionHandshakeError = null;
+        extensionHandshakeErrorTimer = null;
+      }, handshakeErrorTtlMs);
+    };
+
+    // 处理扩展握手时的 connect 请求：比对协议版本范围，不匹配则拒绝并给出可行动原因。
+    const handleExtensionConnect = (req: ExtensionConnectRequest, ws: WebSocket) => {
+      // 1) 连接身份检查：只处理当前连接的响应。MV3 worker 频繁重启时，旧连接的
+      //    connect 响应可能延迟到达，直接修改模块级握手状态会让新连接的校验形同虚设。
+      if (extensionWs !== ws) {
+        return;
+      }
+      const params = req.params ?? {};
+      // 2) nonce 校验：challenge 带出的随机数必须原样回传。安全上冗余（连接已过
+      //    回环/Origin/令牌三道认证），但能兜住跨连接串扰——旧连接的响应带旧 nonce。
+      if (params.nonce !== extensionHandshakeNonce) {
+        try {
+          ws.send(
+            JSON.stringify({
+              type: "res",
+              id: req.id,
+              ok: false,
+              error: { message: "invalid nonce" },
+            }),
+          );
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      const minP = typeof params.minProtocol === "number" ? params.minProtocol : Number.NaN;
+      const maxP = typeof params.maxProtocol === "number" ? params.maxProtocol : Number.NaN;
+      const declared = Number.isFinite(minP) && Number.isFinite(maxP) ? `${minP}–${maxP}` : "未知";
+      const compatible =
+        Number.isFinite(minP) &&
+        Number.isFinite(maxP) &&
+        maxP >= RELAY_PROTOCOL_MIN &&
+        minP <= RELAY_PROTOCOL_MAX;
+
+      if (compatible) {
+        extensionHandshakeDone = true;
+        if (extensionHandshakeTimer) {
+          clearTimeout(extensionHandshakeTimer);
+          extensionHandshakeTimer = null;
+        }
+        flushExtensionReconnectWaiters(true);
+        ws.send(
+          JSON.stringify({
+            type: "res",
+            id: req.id,
+            ok: true,
+          }),
+        );
+        return;
+      }
+
+      const detail = `扩展协议版本不匹配（扩展 ${declared}，客户端支持 ${RELAY_PROTOCOL_MIN}–${RELAY_PROTOCOL_MAX}），请升级 BillRPA 客户端`;
+      setHandshakeError(detail);
+      try {
+        ws.send(
+          JSON.stringify({
+            type: "res",
+            id: req.id,
+            ok: false,
+            error: { message: detail },
+          }),
+        );
+      } catch {
+        // ignore
+      }
+      try {
+        ws.close(1008, "protocol mismatch");
+      } catch {
+        // ignore
+      }
+      closeCdpClientsAfterExtensionDisconnect();
     };
 
     const broadcastToCdpClients = (evt: CdpEvent) => {
@@ -745,7 +878,12 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
       if (path === "/extension/status") {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ connected: extensionConnected() }));
+        res.end(
+          JSON.stringify({
+            connected: extensionConnected(),
+            ...(extensionHandshakeError ? { error: extensionHandshakeError } : {}),
+          }),
+        );
         return;
       }
 
@@ -872,7 +1010,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
           }
           extensionWs = null;
         }
-        if (extensionConnected()) {
+        if (extensionSocketActive()) {
           rejectUpgrade(socket, 409, "Extension already connected");
           return;
         }
@@ -902,7 +1040,47 @@ export async function ensureChromeExtensionRelayServer(opts: {
     wssExtension.on("connection", (ws) => {
       extensionWs = ws;
       clearExtensionDisconnectCleanupTimer();
-      flushExtensionReconnectWaiters(true);
+      // 注意：不在这里 flush 重连等待者——连接建立后还要过协议握手，
+      // 握手成功（handleExtensionConnect）时才视为扩展真正就绪并 flush(true)。
+
+      // 协议握手：发 challenge（携带 nonce），扩展以 connect 请求回复协议版本；匹配才放行。
+      extensionHandshakeDone = false;
+      extensionHandshakeError = null;
+      if (extensionHandshakeErrorTimer) {
+        clearTimeout(extensionHandshakeErrorTimer);
+        extensionHandshakeErrorTimer = null;
+      }
+      if (extensionHandshakeTimer) {
+        clearTimeout(extensionHandshakeTimer);
+        extensionHandshakeTimer = null;
+      }
+      const nonce = randomNonce();
+      extensionHandshakeNonce = nonce;
+      try {
+        ws.send(
+          JSON.stringify({
+            type: "event",
+            event: "connect.challenge",
+            payload: { nonce },
+          }),
+        );
+      } catch {
+        // ignore; the message handler below will surface any failure
+      }
+      extensionHandshakeTimer = setTimeout(() => {
+        if (extensionHandshakeDone || extensionWs !== ws) {
+          return;
+        }
+        setHandshakeError(
+          "扩展未完成协议握手（扩展版本可能过旧），请升级 BillRPA 客户端",
+        );
+        try {
+          ws.close(1008, "extension handshake timeout");
+        } catch {
+          // ignore
+        }
+        closeCdpClientsAfterExtensionDisconnect();
+      }, EXTENSION_HANDSHAKE_TIMEOUT_MS);
 
       const ping = setInterval(() => {
         if (ws.readyState !== WebSocket.OPEN) {
@@ -939,6 +1117,24 @@ export async function ensureChromeExtensionRelayServer(opts: {
           } else {
             pending.resolve(parsed.result);
           }
+          return;
+        }
+
+        // 协议握手：扩展回复 connect 请求，校验声明版本与 relay 支持范围是否有交集。
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          parsed.type === "req" &&
+          parsed.method === "connect"
+        ) {
+          handleExtensionConnect(parsed, ws);
+          return;
+        }
+
+        // 握手完成前不接受业务消息。这是健壮性处理而非安全边界：未授权连接在
+        // WS 升级层已被 401 拒绝，这里防止的是协议不匹配/未完成握手的扩展发出
+        // 无法正确处理的消息。
+        if (!extensionHandshakeDone) {
           return;
         }
 
@@ -1068,6 +1264,10 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
       ws.on("close", () => {
         clearInterval(ping);
+        if (extensionHandshakeTimer) {
+          clearTimeout(extensionHandshakeTimer);
+          extensionHandshakeTimer = null;
+        }
         if (extensionWs !== ws) {
           return;
         }
