@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy Policy — Clawser Browser Relay</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1a1a1a;
+        --muted: #5c5c5c;
+        --rule: #e2e2e2;
+        --accent: #0b5fff;
+        --card: #f7f7f8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #121214;
+          --fg: #e8e8ea;
+          --muted: #a0a0a8;
+          --rule: #2c2c30;
+          --accent: #6f9dff;
+          --card: #1b1b1f;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 3rem 1.25rem 5rem;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.7 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "Helvetica Neue",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.75rem;
+        line-height: 1.3;
+        margin: 0 0 0.5rem;
+      }
+      h2 {
+        font-size: 1.15rem;
+        margin: 2.5rem 0 0.75rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--rule);
+      }
+      h3 {
+        font-size: 1rem;
+        margin: 1.5rem 0 0.5rem;
+      }
+      p,
+      li {
+        color: var(--fg);
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin: 0 0 2rem;
+      }
+      .lede {
+        background: var(--card);
+        border-left: 3px solid var(--accent);
+        padding: 1rem 1.25rem;
+        margin: 1.5rem 0 2rem;
+        border-radius: 0 4px 4px 0;
+      }
+      .lede p {
+        margin: 0;
+      }
+      ul {
+        padding-left: 1.25rem;
+      }
+      li {
+        margin: 0.4rem 0;
+      }
+      code {
+        background: var(--card);
+        padding: 0.12em 0.4em;
+        border-radius: 3px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9em;
+      }
+      a {
+        color: var(--accent);
+      }
+      .perm {
+        margin: 1rem 0;
+      }
+      .perm dt {
+        font-weight: 600;
+        margin-top: 0.9rem;
+      }
+      .perm dd {
+        margin: 0.15rem 0 0;
+        color: var(--muted);
+      }
+      .langbar {
+        margin: 0 0 2.5rem;
+        font-size: 0.9rem;
+      }
+      .langbar a {
+        margin-right: 1rem;
+      }
+      footer {
+        margin-top: 3.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--rule);
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Clawser Browser Relay &middot; Last updated: 20 August 2026</p>
+
+      <p class="langbar"><a href="#en">English</a><a href="#zh">中文</a></p>
+
+      <section id="en">
+        <div class="lede">
+          <p>
+            <strong
+              >Clawser Browser Relay does not collect, store, or transmit any personal information
+              or browsing data.</strong
+            >
+            It contains no telemetry, no analytics, and no crash reporting, and it does not
+            communicate with any remote server.
+          </p>
+        </div>
+
+        <h2>1. How the extension works</h2>
+        <p>
+          Clawser Browser Relay is a developer tool. It exposes browser automation capabilities to a
+          program that you run on your own computer (the Clawser client), in the same way that tools
+          such as Puppeteer and Playwright do.
+        </p>
+        <p>
+          All communication happens inside your own machine. The extension connects only to
+          <code>127.0.0.1</code>, the loopback address of your computer. It makes no network
+          requests to any external host.
+        </p>
+
+        <h2>2. What the extension can access</h2>
+        <p>
+          Once you explicitly attach a tab to an automation session, the extension can read that
+          page's content and perform actions on it through the Chrome DevTools Protocol.
+        </p>
+        <ul>
+          <li>
+            The extension acts only on tabs you have explicitly attached. It never attaches to a
+            page on its own.
+          </li>
+          <li>
+            Page content is passed only to the Clawser client running on your own computer. No third
+            party is involved.
+          </li>
+          <li>
+            What happens to that content afterwards is determined entirely by the scripts you write
+            and run. The extension plays no part in it.
+          </li>
+        </ul>
+
+        <h2>3. Local storage</h2>
+        <p>
+          The extension stores only its connection settings in your browser's local storage — the
+          local relay port number and related preferences. No browsing data is stored. Uninstalling
+          the extension removes all of it.
+        </p>
+
+        <h2>4. Permissions</h2>
+        <dl class="perm">
+          <dt>debugger</dt>
+          <dd>Controls the tabs you attach, via the Chrome DevTools Protocol.</dd>
+          <dt>Access to all websites</dt>
+          <dd>
+            Clawser is a general-purpose automation tool. The sites it operates on are chosen by you
+            at runtime and cannot be known in advance, so a fixed list of hosts is not possible. The
+            extension performs no background activity on any site.
+          </dd>
+          <dt>tabs / activeTab</dt>
+          <dd>
+            Lists open tabs so you can choose which one to attach, and reports tab state back to
+            your local script.
+          </dd>
+          <dt>storage</dt>
+          <dd>Saves the local relay port and connection preferences.</dd>
+          <dt>alarms</dt>
+          <dd>
+            Schedules reconnection to the local relay after the service worker is suspended by the
+            browser.
+          </dd>
+          <dt>webNavigation</dt>
+          <dd>Detects navigation in attached tabs so the automation session stays synchronised.</dd>
+        </dl>
+
+        <h2>5. Changes to this policy</h2>
+        <p>
+          If this policy changes, the revised version will be published on this page with an updated
+          date above.
+        </p>
+
+        <h2>6. Contact</h2>
+        <p>
+          Questions about this policy can be raised at
+          <a href="https://github.com/agilecho2022-lgtm/clawser/issues"
+            >github.com/agilecho2022-lgtm/clawser/issues</a
+          >.
+        </p>
+      </section>
+
+      <section id="zh" lang="zh-CN">
+        <h2>中文版</h2>
+
+        <div class="lede">
+          <p>
+            <strong>Clawser Browser Relay 不收集、不存储、不传输任何个人信息或浏览数据。</strong>
+            本扩展没有任何遥测、分析或崩溃上报功能，也不与任何远程服务器通信。
+          </p>
+        </div>
+
+        <h3>一、扩展如何工作</h3>
+        <p>
+          本扩展是一个开发者工具。它在你的电脑上，把浏览器自动化能力提供给你自己运行的本地程序
+          （Clawser 客户端），机制与 Puppeteer、Playwright 等工具相同。
+        </p>
+        <p>
+          所有通信都发生在你的电脑内部，连接地址固定为 <code>127.0.0.1</code>（本机回环地址）。
+          扩展不会向任何外部服务器发送请求。
+        </p>
+
+        <h3>二、扩展会访问什么</h3>
+        <p>
+          当你主动将某个标签页接入自动化会话后，扩展可以通过 Chrome DevTools Protocol
+          读取该页面内容并执行操作。
+        </p>
+        <ul>
+          <li>扩展只作用于你明确接入的标签页，不会自动接管任何页面。</li>
+          <li>页面内容仅传递给你本机运行的 Clawser 客户端，不经过任何第三方。</li>
+          <li>这些内容之后如何使用、是否保存，完全由你自己编写和运行的脚本决定，本扩展不参与。</li>
+        </ul>
+
+        <h3>三、本地存储</h3>
+        <p>
+          扩展仅在浏览器本地保存连接配置（本机 relay 端口号等），不保存任何浏览数据。
+          卸载扩展即全部清除。
+        </p>
+
+        <h3>四、权限说明</h3>
+        <ul>
+          <li><strong>debugger</strong> —— 通过 CDP 控制你接入的标签页。</li>
+          <li>
+            <strong>全站访问</strong> —— Clawser 是通用自动化工具，目标站点由你在运行时决定、
+            无法预先枚举，因此不能给出固定的网站列表。扩展不在任何站点执行后台活动。
+          </li>
+          <li>
+            <strong>标签页 / 当前标签页</strong> —— 列出标签页供你选择接入，并把标签页状态
+            回报给你的本地脚本。
+          </li>
+          <li><strong>存储</strong> —— 保存本机 relay 端口和连接配置。</li>
+          <li><strong>闹钟</strong> —— 在 service worker 被浏览器挂起后定时重连本机 relay。</li>
+          <li><strong>网页导航</strong> —— 感知已接入标签页的跳转，保持自动化会话同步。</li>
+        </ul>
+
+        <h3>五、政策变更</h3>
+        <p>本政策如有变更，修订后的版本将发布在本页面，并更新页首日期。</p>
+
+        <h3>六、联系方式</h3>
+        <p>
+          对本政策有疑问，可通过
+          <a href="https://github.com/agilecho2022-lgtm/clawser/issues">GitHub Issues</a> 反馈。
+        </p>
+      </section>
+
+      <footer>Clawser Browser Relay &middot; Privacy Policy &middot; 20 August 2026</footer>
+    </main>
+  </body>
+</html>
