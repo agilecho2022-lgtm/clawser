@@ -475,7 +475,7 @@ describe("chrome extension relay server", () => {
     const { ws: ext, result } = await connectExtensionExpectRejection(port, 999, 999);
     expect(result.ok).toBe(false);
     expect(result.error ?? "").toContain("扩展协议版本不匹配");
-    expect(result.error ?? "").toContain("请升级 BillRPA 客户端");
+    expect(result.error ?? "").toContain("请升级 Clawser 客户端");
 
     await waitForClose(ext);
 

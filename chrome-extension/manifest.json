@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Clawser Browser Relay",
   "version": "0.1.0",
-  "description": "Attach Clawser to your existing Chrome tab via a local CDP relay server.",
+  "description": "Attach your local Clawser automation to any browser tab via a local CDP relay.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

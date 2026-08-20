@@ -512,7 +512,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
         return;
       }
 
-      const detail = `扩展协议版本不匹配（扩展 ${declared}，客户端支持 ${RELAY_PROTOCOL_MIN}–${RELAY_PROTOCOL_MAX}），请升级 BillRPA 客户端`;
+      const detail = `扩展协议版本不匹配（扩展 ${declared}，客户端支持 ${RELAY_PROTOCOL_MIN}–${RELAY_PROTOCOL_MAX}），请升级 Clawser 客户端`;
       setHandshakeError(detail);
       try {
         ws.send(
@@ -1071,7 +1071,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
         if (extensionHandshakeDone || extensionWs !== ws) {
           return;
         }
-        setHandshakeError("扩展未完成协议握手（扩展版本可能过旧），请升级 BillRPA 客户端");
+        setHandshakeError("扩展未完成协议握手（扩展版本可能过旧），请升级 Clawser 客户端");
         try {
           ws.close(1008, "extension handshake timeout");
         } catch {
