@@ -35,7 +35,13 @@ const sharedMocks = vi.hoisted(() => ({
           targetId: "t1",
           url: "https://example.com",
           frames: [
-            { index: 0, name: "", url: "https://example.com", parentIndex: null, html: "<html></html>" },
+            {
+              index: 0,
+              name: "",
+              url: "https://example.com",
+              parentIndex: null,
+              html: "<html></html>",
+            },
           ],
         };
       }
@@ -244,9 +250,7 @@ describe("browser cli snapshot defaults", () => {
     expect(params?.query).toMatchObject({
       targetId: "tab-1",
     });
-    expect(runtime.log).toHaveBeenCalledWith(
-      expect.stringContaining('"frames"'),
-    );
+    expect(runtime.log).toHaveBeenCalledWith(expect.stringContaining('"frames"'));
   });
 
   it("sends full-page screenshot request", async () => {

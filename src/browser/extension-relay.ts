@@ -1,5 +1,5 @@
-import fs from "node:fs/promises";
 import { randomBytes } from "node:crypto";
+import fs from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -1071,9 +1071,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
         if (extensionHandshakeDone || extensionWs !== ws) {
           return;
         }
-        setHandshakeError(
-          "扩展未完成协议握手（扩展版本可能过旧），请升级 BillRPA 客户端",
-        );
+        setHandshakeError("扩展未完成协议握手（扩展版本可能过旧），请升级 BillRPA 客户端");
         try {
           ws.close(1008, "extension handshake timeout");
         } catch {
@@ -1115,15 +1113,23 @@ export async function ensureChromeExtensionRelayServer(opts: {
           if ("error" in parsed && typeof parsed.error === "string" && parsed.error.trim()) {
             pending.reject(new Error(parsed.error));
           } else {
-            pending.resolve(parsed.result);
+            // tsgo/tsc 都不会用 typeof 属性收窄非字面量类型（id: number vs string），
+            // 所以这里在取值处用 in 收窄：错误回执 { id, error } 没有 result 字段，
+            // 不能把 "result" in parsed 放进外层守卫，否则错误回执会被静默丢弃、
+            // 请求要卡满 30s 超时才报 "extension request timeout"，真实原因丢失。
+            pending.resolve("result" in parsed ? parsed.result : undefined);
           }
           return;
         }
 
         // 协议握手：扩展回复 connect 请求，校验声明版本与 relay 支持范围是否有交集。
+        // method 判断不能省：消息来自独立发版、Edge 自动更新的扩展，类型描述的是期望
+        // 而非现实。协议升级出现第二个 type:"req" 方法时，老 relay 若只看 type 会把
+        // 新方法当握手请求处理、回 "invalid nonce"，把「版本不匹配」的诊断带偏成认证问题。
         if (
           parsed &&
           typeof parsed === "object" &&
+          "type" in parsed &&
           parsed.type === "req" &&
           parsed.method === "connect"
         ) {

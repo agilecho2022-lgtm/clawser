@@ -64,7 +64,9 @@ describe("chrome extension background worker", () => {
     expect(helperStart).toBeGreaterThanOrEqual(0);
     expect(helperEnd).toBeGreaterThan(helperStart);
     expect(listenerStart).toBeGreaterThanOrEqual(0);
-    expect(source).toContain("chrome.tabs.onCreated.addListener((tab) => void whenReady(() => autoAttachOpenedTab(tab)))");
+    expect(source).toContain(
+      "chrome.tabs.onCreated.addListener((tab) => void whenReady(() => autoAttachOpenedTab(tab)))",
+    );
     expect(helperBlock).toContain("openerTabId");
     expect(helperBlock).toContain("tabs.get(openerTabId)?.state !== 'connected'");
     expect(helperBlock).toContain("await attachTabForRelay");

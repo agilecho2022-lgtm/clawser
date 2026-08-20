@@ -164,10 +164,7 @@ async function performHandshakeWithQueue(
 
 // connectExtensionAt 建立扩展连接并完成协议握手（默认声明协议 3–3）。
 // useHeaders=true 时用 relayAuthHeaders（与 extensionWsUrl 的 token 等效）。
-async function connectExtensionAt(
-  port: number | string,
-  useHeaders = false,
-): Promise<WebSocket> {
+async function connectExtensionAt(port: number | string, useHeaders = false): Promise<WebSocket> {
   const ws = useHeaders
     ? new WebSocket(`ws://127.0.0.1:${port}/extension`, {
         headers: relayAuthHeaders(`ws://127.0.0.1:${port}/extension`),
@@ -503,6 +500,45 @@ describe("chrome extension relay server", () => {
     await waitForClose(ext);
   });
 
+  // C25 版本偏斜防护：扩展独立发版、由 Edge 自动更新，协议升级后可能发出第二个
+  // type:"req" 方法（如 v4 新命令）。老 relay 必须忽略而不是当作握手请求处理——
+  // 否则会回 "invalid nonce"，把「版本不匹配」的诊断带偏成认证问题。握手守卫的
+  // method 判断不能省，这里从「未握手连接」方向覆盖：错误实现（只看 type）会立即
+  // 回 invalid nonce，正确实现则无任何响应。
+  it("ignores non-connect req messages instead of treating them as handshake", async () => {
+    const port = await getFreePort();
+    cdpUrl = `http://127.0.0.1:${port}`;
+    await ensureChromeExtensionRelayServer({ cdpUrl });
+
+    const ws = new WebSocket(extensionWsUrl(port));
+    const queue = createMessageQueue(ws);
+    await waitForOpen(ws);
+
+    // 先消费 connect.challenge，避免它干扰后续「无响应」断言。
+    const challenge = JSON.parse(await queue.next()) as { type?: string; event?: string };
+    expect(challenge.type).toBe("event");
+    expect(challenge.event).toBe("connect.challenge");
+
+    // 未完成握手时发一个 type:"req" 但 method 不是 connect 的消息（模拟未来协议方法）。
+    ws.send(
+      JSON.stringify({
+        type: "req",
+        id: "v4-method-1",
+        method: "otherMethod",
+        params: { nonce: "whatever" },
+      }),
+    );
+
+    // 短时间内必须没有任何响应（不是 invalid nonce，也不是 ok）。
+    const reply = await queue.next(500).then(
+      (raw) => raw,
+      () => null,
+    );
+    expect(reply).toBeNull();
+
+    ws.close();
+  });
+
   // C25 第 1+3 条：旧连接的延迟响应（带旧 nonce）不得污染当前连接的握手状态。
   // 场景：连接 A 收 challenge 后断开，连接 B 建立；从 B 发送带「A 的 nonce」的
   // connect（模拟跨连接串扰），必须被拒绝且 B 不被标记为已握手；B 用正确 nonce
@@ -540,7 +576,10 @@ describe("chrome extension relay server", () => {
         params: { minProtocol: 3, maxProtocol: 3, nonce: staleNonce },
       }),
     );
-    const staleRes = JSON.parse(await queueB.next()) as { ok?: boolean; error?: { message?: string } };
+    const staleRes = JSON.parse(await queueB.next()) as {
+      ok?: boolean;
+      error?: { message?: string };
+    };
     expect(staleRes.ok).toBe(false);
     expect(staleRes.error?.message).toBe("invalid nonce");
 
