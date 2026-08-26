@@ -227,6 +227,33 @@ function daemonPidPath(env) {
   return path.join(stateDirForEnv(env), "browser", "clawser-daemon.pid");
 }
 
+function daemonLogPath(env) {
+  return path.join(stateDirForEnv(env), "browser", "clawser-daemon.log");
+}
+
+const DAEMON_LOG_MAX_BYTES = 2 * 1024 * 1024;
+
+// Returns an append fd for the daemon log, or null when the log cannot be opened.
+// The daemon is detached, so without this its stdout/stderr (including listen
+// failures such as EACCES on the relay port) would be lost entirely.
+function openDaemonLog(env) {
+  const file = daemonLogPath(env);
+  try {
+    if (fs.statSync(file).size > DAEMON_LOG_MAX_BYTES) {
+      fs.rmSync(file, { force: true });
+    }
+  } catch {
+    // no existing log
+  }
+  try {
+    const fd = fs.openSync(file, "a");
+    fs.writeSync(fd, `\n=== daemon start ${new Date().toISOString()} ===\n`);
+    return fd;
+  } catch {
+    return null;
+  }
+}
+
 function readDaemonPid(env) {
   try {
     const pid = Number.parseInt(fs.readFileSync(daemonPidPath(env), "utf8").trim(), 10);
@@ -365,19 +392,29 @@ async function ensureDaemon(args) {
   }
 
   fs.mkdirSync(path.dirname(daemonPidPath(env)), { recursive: true });
+  const logFd = openDaemonLog(env);
   const child = spawn(process.execPath, [path.join(here, "clawser.mjs"), "__daemon"], {
     cwd: here,
     detached: true,
     env,
-    stdio: "ignore",
+    stdio: logFd === null ? "ignore" : ["ignore", logFd, logFd],
     windowsHide: true,
   });
   child.unref();
+  if (logFd !== null) {
+    try {
+      fs.closeSync(logFd);
+    } catch {
+      // already closed
+    }
+  }
   if (child.pid) {
     fs.writeFileSync(daemonPidPath(env), `${child.pid}\n`);
   }
   if (!(await waitForRelay())) {
-    throw new Error("clawser browser relay did not become reachable at http://127.0.0.1:18792/");
+    throw new Error(
+      `clawser browser relay did not become reachable at http://127.0.0.1:18792/ (daemon log: ${daemonLogPath(env)})`,
+    );
   }
 }
 
