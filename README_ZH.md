@@ -26,7 +26,7 @@ English documentation: [README.md](README.md)
 当前有意保留的边界：
 
 - `clawser stop` 只停止 relay，不会关闭 Chrome，避免误关用户浏览器。
-- 目标 tab 仍然需要手动点击一次 Chrome 扩展图标，徽标显示 `ON` 后才能被脚本控制。
+- tab 可以通过 `clawser attach` 命令连接（无需点击扩展），也可以点击固定扩展图标连接；连接成功后徽标显示 `ON`。
 - 菜单栏程序目前是本地开发版 `.app`，还不是签名安装包。
 
 ## 环境要求
@@ -41,13 +41,13 @@ English documentation: [README.md](README.md)
 Linux / macOS / WSL2 / Android (Termux)：
 
 ```bash
-curl -fsSL https://www.toymotion.fun/install.sh | bash
+curl -fsSL https://www.agilecho.top/install.sh | bash
 ```
 
 Windows 原生 PowerShell：
 
 ```powershell
-iex (irm https://www.toymotion.fun/install.ps1)
+iex (irm https://www.agilecho.top/install.ps1)
 ```
 
 快速安装脚本默认把源码安装到 `~/.clawser-src`，并把 `clawser` 命令链接到
@@ -57,7 +57,7 @@ iex (irm https://www.toymotion.fun/install.ps1)
 可通过环境变量覆盖安装来源、分支和目录：
 
 ```bash
-curl -fsSL https://www.toymotion.fun/install.sh | \
+curl -fsSL https://www.agilecho.top/install.sh | \
   CLAWSER_BRANCH=main CLAWSER_INSTALL_DIR=/opt/clawser bash
 ```
 
@@ -96,7 +96,9 @@ node clawser.mjs status
 
 ## Chrome 扩展安装
 
-先把 unpacked 扩展安装到 Clawser 的状态目录：
+**Microsoft Edge**：扩展也已上架 Edge 加载项商店，可以直接从商店安装，无需手动加载。
+
+**手动安装**（Chrome 和 Edge 方式相同）：先把 unpacked 扩展安装到 Clawser 的状态目录：
 
 ```bash
 clawser extension install
@@ -109,9 +111,9 @@ clawser extension path
 ~/.clawser/browser/chrome-extension
 ```
 
-在 Chrome 中加载：
+在 Chrome / Edge 中加载：
 
-1. 打开 `chrome://extensions`。
+1. 打开 `chrome://extensions`（Edge 用 `edge://extensions`）。
 2. 打开 **Developer mode / 开发者模式**。
 3. 点击 **Load unpacked / 加载已解压的扩展程序**。
 4. 选择 `clawser extension path` 打印出来的目录。
@@ -134,7 +136,14 @@ http://127.0.0.1:18792/
 如果 Chrome 没有运行，`clawser start` 会打开 Chrome 的 `about:blank`。
 它不会自动连接当前 tab。
 
-打开目标网页后，点击 Chrome 工具栏里固定的 **Clawser Browser Relay** 扩展图标。
+用 CLI 连接 tab（无需点击扩展）：
+
+```bash
+clawser attach zzjb.rsj.sh.gov.cn   # 连接 URL 包含该主机的 tab
+clawser attach --all                # 连接所有普通 tab
+```
+
+也可以打开目标网页后，点击 Chrome 工具栏里固定的 **Clawser Browser Relay** 扩展图标。
 徽标显示 `ON` 后，脚本才能控制该 tab。
 
 检查连接状态：
@@ -210,10 +219,13 @@ open -n "/tmp/Clawser Tray.app"
 
 ```bash
 clawser open https://www.baidu.com
+clawser navigate https://www.baidu.com/dashboard
 clawser tabs
 clawser snapshot --format ai
 clawser snapshot --format aria --limit 200
+clawser frames-html
 clawser screenshot --full-page
+clawser resize 1280 720
 ```
 
 页面交互：
@@ -223,16 +235,32 @@ clawser click <ref>
 clawser type <ref> "hello"
 clawser press Enter
 clawser hover <ref>
+clawser scrollintoview <ref>
+clawser select <ref> OptionA OptionB
+clawser fill --fields '[{"ref":"1","value":"Ada"}]'
 clawser wait --text "Done"
+```
+
+标签页：
+
+```bash
+clawser focus <targetId>
+clawser close <targetId>
+clawser tab select 1
+clawser tab new
 ```
 
 页面状态和调试：
 
 ```bash
 clawser console
+clawser console --level error
 clawser errors
 clawser requests
+clawser responsebody https://example.com/api
 clawser evaluate --fn '() => document.title'
+clawser pdf
+clawser highlight <ref>
 clawser cookies
 clawser storage local get
 ```

@@ -43,7 +43,17 @@ clawser type <ref> "text"
    clawser browser --json start
    ```
 
-3. Ensure the Chrome tab is connected. If commands report no attached tab, ask the user to open the target tab in Chrome and click the pinned **Clawser Browser Relay** extension icon until the badge shows `ON`.
+3. Ensure the target tab is connected. Prefer the CLI attach command (no
+   clicking needed):
+
+   ```bash
+   clawser browser --json attach <url-contains>
+   clawser browser --json attach --all
+   ```
+
+   If attach reports no matching tab, ask the user to open the target tab in
+   Chrome and click the pinned **Clawser Browser Relay** extension icon until
+   the badge shows `ON`.
 
 4. Confirm attached tabs:
 
@@ -111,7 +121,11 @@ clawser browser --json console --level error
 clawser browser --json errors
 clawser browser --json requests
 clawser browser --json responsebody <url>
+clawser browser --json frames-html
 ```
+
+`frames-html` dumps the page plus every frame's HTML — useful for multi-frame
+(iframe) pages where the top-level snapshot is not enough.
 
 Use `evaluate` sparingly for page state that snapshots cannot expose:
 
@@ -170,7 +184,7 @@ clawser browser --browser-profile chrome --json snapshot
 
 ## Troubleshooting
 
-- `tab not found` or no attached tabs: the Chrome extension is not connected to a tab. Ask the user to click the **Clawser Browser Relay** extension icon on the target tab and wait for `ON`.
+- `tab not found` or no attached tabs: try `clawser browser --json attach <url-contains>` first; if it still reports none, ask the user to open the target tab and click the **Clawser Browser Relay** extension icon until the badge shows `ON`.
 - Relay unreachable: run `clawser browser --json start`, then retry `status`.
 - Need extension install path: run `clawser browser --json extension path` or `clawser extension path`.
 - Need to install/update the unpacked extension: run `clawser browser --json extension install`, then ask the user to load the printed extension directory in `chrome://extensions`.

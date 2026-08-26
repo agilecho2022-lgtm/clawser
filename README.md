@@ -27,8 +27,9 @@ Chinese documentation: [README_ZH.md](README_ZH.md)
 Current intentional limits:
 
 - `clawser stop` stops the relay only. It does not close Chrome.
-- The Chrome extension must still be clicked manually on the target tab so the
-  badge shows `ON`.
+- A tab can be connected with `clawser attach` (no clicking needed) or by
+  clicking the pinned extension icon on the target tab; the badge shows `ON`
+  once attached.
 - The tray app is currently a local development app bundle, not a signed
   installer.
 
@@ -44,13 +45,13 @@ Current intentional limits:
 Linux / macOS / WSL2 / Android (Termux):
 
 ```bash
-curl -fsSL https://www.toymotion.fun/install.sh | bash
+curl -fsSL https://www.agilecho.top/install.sh | bash
 ```
 
 Windows native PowerShell:
 
 ```powershell
-iex (irm https://www.toymotion.fun/install.ps1)
+iex (irm https://www.agilecho.top/install.ps1)
 ```
 
 The quick install script installs the source checkout to `~/.clawser-src` and
@@ -61,7 +62,7 @@ You can override the source, branch, and install directory with environment
 variables:
 
 ```bash
-curl -fsSL https://www.toymotion.fun/install.sh | \
+curl -fsSL https://www.agilecho.top/install.sh | \
   CLAWSER_BRANCH=main CLAWSER_INSTALL_DIR=/opt/clawser bash
 ```
 
@@ -100,7 +101,11 @@ node clawser.mjs status
 
 ## Chrome Extension Setup
 
-Install the unpacked extension into Clawser's state directory:
+**Microsoft Edge**: the extension is also available from the Edge Add-ons
+store, so no manual unpacked load is needed.
+
+**Manual install** (Chrome and Edge both work the same way): install the
+unpacked extension into Clawser's state directory:
 
 ```bash
 clawser extension install
@@ -113,9 +118,9 @@ The default extension path is:
 ~/.clawser/browser/chrome-extension
 ```
 
-Load it in Chrome:
+Load it in Chrome / Edge:
 
-1. Open `chrome://extensions`.
+1. Open `chrome://extensions` (or `edge://extensions`).
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
 4. Select the folder printed by `clawser extension path`.
@@ -138,7 +143,14 @@ http://127.0.0.1:18792/
 When Chrome is not running, `clawser start` opens Chrome with `about:blank`.
 It does not attach a tab by itself.
 
-Open the target Chrome tab, then click the pinned **Clawser Browser Relay**
+Connect a tab with the CLI (no clicking needed):
+
+```bash
+clawser attach zzjb.rsj.sh.gov.cn   # attach tabs whose URL contains the host
+clawser attach --all                # attach all ordinary tabs
+```
+
+Or open the target tab, then click the pinned **Clawser Browser Relay**
 extension icon on that tab. The badge should show `ON`.
 
 Check relay attachment:
@@ -217,10 +229,13 @@ Open and inspect pages:
 
 ```bash
 clawser open https://www.baidu.com
+clawser navigate https://www.baidu.com/dashboard
 clawser tabs
 clawser snapshot --format ai
 clawser snapshot --format aria --limit 200
+clawser frames-html
 clawser screenshot --full-page
+clawser resize 1280 720
 ```
 
 Interact with a page:
@@ -230,16 +245,32 @@ clawser click <ref>
 clawser type <ref> "hello"
 clawser press Enter
 clawser hover <ref>
+clawser scrollintoview <ref>
+clawser select <ref> OptionA OptionB
+clawser fill --fields '[{"ref":"1","value":"Ada"}]'
 clawser wait --text "Done"
+```
+
+Tabs:
+
+```bash
+clawser focus <targetId>
+clawser close <targetId>
+clawser tab select 1
+clawser tab new
 ```
 
 Page state and debugging:
 
 ```bash
 clawser console
+clawser console --level error
 clawser errors
 clawser requests
+clawser responsebody https://example.com/api
 clawser evaluate --fn '() => document.title'
+clawser pdf
+clawser highlight <ref>
 clawser cookies
 clawser storage local get
 ```
