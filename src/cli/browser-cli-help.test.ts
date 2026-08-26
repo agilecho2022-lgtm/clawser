@@ -120,15 +120,22 @@ describe("browser CLI help", () => {
         cookies [options]                   Read/write cookies
         storage                             Read/write localStorage/sessionStorage
         set                                 Browser environment settings
+        help [command]                      display help for command
 
       Examples:
         clawser status
         clawser start
         clawser stop
         clawser tabs
+        clawser attach example.com
+        clawser attach --all
+        clawser tab select 1
         clawser open https://example.com
         clawser focus abcd1234
         clawser close abcd1234
+        clawser profiles
+        clawser extension install
+        clawser extension path
         clawser screenshot
         clawser screenshot --full-page
         clawser screenshot --ref 12
@@ -142,6 +149,7 @@ describe("browser CLI help", () => {
         clawser type 23 "hello" --submit
         clawser press Enter
         clawser hover 44
+        clawser scrollintoview 44
         clawser drag 10 11
         clawser select 9 OptionA OptionB
         clawser upload /tmp/clawser/uploads/file.pdf
@@ -150,7 +158,17 @@ describe("browser CLI help", () => {
         clawser wait --text "Done"
         clawser evaluate --fn '(el) => el.textContent' --ref 7
         clawser console --level error
+        clawser errors
+        clawser requests
+        clawser responsebody https://example.com/api
+        clawser frames-html
+        clawser highlight 12
         clawser pdf
+        clawser trace
+        clawser cookies
+        clawser storage local get
+        clawser waitfordownload /tmp/clawser/downloads/report.pdf
+        clawser download 7 /tmp/clawser/downloads/report.pdf
 
       "
     `);

@@ -20,6 +20,7 @@ export function registerBrowserCli(program: Command) {
     .description("Manage Clawser's dedicated browser (Chrome/Chromium)")
     .option("--browser-profile <name>", "Browser profile name (default from config)")
     .option("--json", "Output machine-readable JSON", false)
+    .helpCommand("help [command]", "display help for command")
     .addHelpText(
       "after",
       () =>
