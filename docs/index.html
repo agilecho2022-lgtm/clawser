@@ -1,0 +1,1139 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Clawser is an open-source developer tool for local browser automation through a CDP relay."
+    />
+    <meta name="theme-color" content="#07111f" />
+    <title>Clawser — Local browser automation</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #f3f7ff;
+        --muted: #9fb0c7;
+        --faint: #6e829e;
+        --line: rgba(145, 177, 216, 0.18);
+        --panel: rgba(13, 29, 49, 0.76);
+        --panel-strong: #0d1d31;
+        --blue: #3d8bff;
+        --cyan: #53d8ff;
+        --green: #77e6a0;
+        --bg: #07111f;
+        --max: 1160px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        overflow-x: hidden;
+        background:
+          radial-gradient(circle at 76% 4%, rgba(30, 114, 255, 0.19), transparent 30rem),
+          radial-gradient(circle at 15% 32%, rgba(30, 209, 255, 0.08), transparent 24rem), var(--bg);
+        color: var(--ink);
+        font:
+          16px/1.65 Inter,
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+
+      body::before {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+        background-size: 64px 64px;
+        mask-image: linear-gradient(to bottom, black, transparent 72%);
+        content: "";
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid rgba(83, 216, 255, 0.7);
+        outline-offset: 3px;
+      }
+
+      .shell {
+        width: min(calc(100% - 40px), var(--max));
+        margin: 0 auto;
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 76px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        display: inline-flex;
+        gap: 12px;
+        align-items: center;
+        font-size: 1.05rem;
+        font-weight: 760;
+        letter-spacing: -0.02em;
+      }
+
+      .brand-mark {
+        position: relative;
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        transform: rotate(-8deg);
+        border: 1px solid rgba(83, 216, 255, 0.82);
+        border-radius: 9px 4px 9px 4px;
+        background: linear-gradient(145deg, #1675ff, #0b4bb4);
+        box-shadow: 0 8px 28px rgba(32, 119, 255, 0.3);
+        color: white;
+        font-weight: 900;
+      }
+
+      .brand-mark span {
+        transform: rotate(8deg);
+      }
+
+      .nav-actions,
+      .language-switch {
+        display: flex;
+        align-items: center;
+      }
+
+      .nav-actions {
+        gap: 20px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .nav-link:hover {
+        color: var(--ink);
+      }
+
+      .language-switch {
+        gap: 2px;
+        padding: 3px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(9, 23, 39, 0.8);
+      }
+
+      .language-switch button {
+        min-width: 38px;
+        padding: 5px 9px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--faint);
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .language-switch button[aria-pressed="true"] {
+        background: rgba(61, 139, 255, 0.2);
+        color: var(--ink);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
+        gap: clamp(48px, 8vw, 108px);
+        align-items: center;
+        min-height: 690px;
+        padding: 76px 0 90px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+        margin: 0 0 22px;
+        color: var(--cyan);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow::before {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 14px var(--green);
+        content: "";
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 740px;
+        margin-bottom: 26px;
+        font-size: clamp(3.15rem, 7vw, 6.2rem);
+        line-height: 0.96;
+        letter-spacing: -0.065em;
+      }
+
+      h1 em {
+        background: linear-gradient(100deg, #fff 15%, #7cb5ff 58%, #51dbff);
+        background-clip: text;
+        color: transparent;
+        font-style: normal;
+      }
+
+      .hero-copy {
+        max-width: 630px;
+        margin-bottom: 34px;
+        color: var(--muted);
+        font-size: clamp(1.05rem, 1.5vw, 1.22rem);
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .button {
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 0 20px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: rgba(14, 31, 52, 0.72);
+        color: var(--ink);
+        font-size: 0.92rem;
+        font-weight: 720;
+        transition:
+          transform 160ms ease,
+          border-color 160ms ease,
+          background 160ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+        border-color: rgba(83, 216, 255, 0.52);
+        background: rgba(21, 45, 75, 0.9);
+      }
+
+      .button.primary {
+        border-color: #388cff;
+        background: linear-gradient(135deg, #2379f4, #0757c9);
+        box-shadow: 0 14px 34px rgba(20, 106, 232, 0.24);
+      }
+
+      .button .arrow {
+        font-size: 1.1rem;
+      }
+
+      .trust-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        margin-top: 28px;
+        color: var(--faint);
+        font-size: 0.82rem;
+      }
+
+      .trust-row span::before {
+        margin-right: 7px;
+        color: var(--green);
+        content: "✓";
+      }
+
+      .terminal-wrap {
+        position: relative;
+      }
+
+      .terminal-wrap::before {
+        position: absolute;
+        inset: -15% -18%;
+        z-index: -1;
+        background: radial-gradient(circle, rgba(31, 117, 255, 0.2), transparent 65%);
+        content: "";
+      }
+
+      .terminal {
+        overflow: hidden;
+        transform: perspective(1200px) rotateY(-4deg) rotateX(1deg);
+        border: 1px solid rgba(122, 164, 220, 0.25);
+        border-radius: 16px;
+        background: rgba(7, 18, 32, 0.92);
+        box-shadow:
+          0 35px 90px rgba(0, 0, 0, 0.38),
+          inset 0 1px rgba(255, 255, 255, 0.04);
+      }
+
+      .terminal-head {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+        height: 48px;
+        padding: 0 17px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(16, 34, 56, 0.78);
+      }
+
+      .terminal-head i {
+        display: block;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #39506d;
+      }
+
+      .terminal-head i:first-child {
+        background: #ff6b68;
+      }
+
+      .terminal-head i:nth-child(2) {
+        background: #f6c75b;
+      }
+
+      .terminal-head i:nth-child(3) {
+        background: #59d98b;
+      }
+
+      .terminal-title {
+        margin-left: auto;
+        color: #647995;
+        font:
+          0.72rem ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+
+      .terminal-body {
+        min-height: 340px;
+        padding: 28px 26px;
+        color: #9fb3cd;
+        font:
+          0.84rem/1.9 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+
+      .terminal-body p {
+        margin-bottom: 11px;
+      }
+
+      .prompt {
+        color: var(--cyan);
+      }
+
+      .command {
+        color: #f5f8ff;
+      }
+
+      .success {
+        color: var(--green);
+      }
+
+      .dim {
+        color: #536983;
+      }
+
+      .relay-line {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 11px;
+        align-items: center;
+        margin: 26px 0 20px;
+        color: #7890ad;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+      }
+
+      .relay-line::before,
+      .relay-line::after {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, #235c9d, transparent);
+        content: "";
+      }
+
+      .browser-card {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        padding: 14px;
+        border: 1px solid rgba(85, 145, 220, 0.2);
+        border-radius: 10px;
+        background: rgba(18, 39, 64, 0.72);
+      }
+
+      .browser-icon {
+        display: grid;
+        flex: 0 0 auto;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 8px;
+        background: rgba(61, 139, 255, 0.18);
+        color: var(--cyan);
+        font-weight: 900;
+      }
+
+      .browser-card strong,
+      .browser-card small {
+        display: block;
+      }
+
+      .browser-card strong {
+        color: #eaf3ff;
+        font-size: 0.78rem;
+      }
+
+      .browser-card small {
+        color: #667d99;
+        font-size: 0.68rem;
+      }
+
+      .on-badge {
+        margin-left: auto;
+        padding: 3px 8px;
+        border: 1px solid rgba(119, 230, 160, 0.26);
+        border-radius: 999px;
+        background: rgba(119, 230, 160, 0.08);
+        color: var(--green);
+        font-size: 0.65rem;
+        font-weight: 800;
+      }
+
+      .section {
+        padding: 110px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .section-head {
+        display: grid;
+        grid-template-columns: 0.7fr 1.3fr;
+        gap: 40px;
+        margin-bottom: 54px;
+      }
+
+      .kicker {
+        color: var(--cyan);
+        font:
+          0.78rem ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h2 {
+        max-width: 760px;
+        margin-bottom: 18px;
+        font-size: clamp(2.15rem, 4.4vw, 4rem);
+        line-height: 1.05;
+        letter-spacing: -0.045em;
+      }
+
+      .section-intro {
+        max-width: 680px;
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+        counter-reset: step;
+      }
+
+      .step {
+        min-height: 242px;
+        padding: 26px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: linear-gradient(145deg, rgba(16, 35, 58, 0.78), rgba(10, 23, 40, 0.55));
+        counter-increment: step;
+      }
+
+      .step::before {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        margin-bottom: 52px;
+        place-items: center;
+        border: 1px solid rgba(74, 152, 255, 0.36);
+        border-radius: 9px;
+        background: rgba(61, 139, 255, 0.1);
+        color: #8fbdff;
+        content: "0" counter(step);
+        font:
+          0.75rem ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+
+      h3 {
+        margin-bottom: 10px;
+        font-size: 1.08rem;
+        letter-spacing: -0.015em;
+      }
+
+      .step p,
+      .feature p {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 0.91rem;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--line);
+      }
+
+      .feature {
+        min-height: 190px;
+        padding: 34px;
+        background: #0a1829;
+      }
+
+      .feature-code {
+        display: inline-flex;
+        margin-bottom: 30px;
+        color: #65c9ff;
+        font:
+          0.75rem ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+
+      .privacy-panel {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 70px;
+        align-items: center;
+        overflow: hidden;
+        padding: clamp(36px, 6vw, 72px);
+        border: 1px solid rgba(83, 216, 255, 0.22);
+        border-radius: 22px;
+        background:
+          linear-gradient(120deg, rgba(18, 54, 87, 0.7), rgba(9, 23, 40, 0.82)), var(--panel-strong);
+      }
+
+      .privacy-panel::after {
+        position: absolute;
+        right: -110px;
+        bottom: -150px;
+        width: 380px;
+        height: 380px;
+        border: 1px solid rgba(83, 216, 255, 0.1);
+        border-radius: 50%;
+        box-shadow:
+          0 0 0 60px rgba(83, 216, 255, 0.03),
+          0 0 0 120px rgba(83, 216, 255, 0.02);
+        content: "";
+      }
+
+      .privacy-panel h2 {
+        font-size: clamp(2.2rem, 4vw, 3.5rem);
+      }
+
+      .privacy-points {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 12px;
+      }
+
+      .privacy-point {
+        display: flex;
+        gap: 13px;
+        align-items: center;
+        min-height: 58px;
+        padding: 0 17px;
+        border: 1px solid rgba(139, 182, 227, 0.14);
+        border-radius: 10px;
+        background: rgba(5, 18, 31, 0.5);
+        color: #c6d5e7;
+        font-size: 0.9rem;
+      }
+
+      .privacy-point::before {
+        color: var(--green);
+        content: "●";
+        font-size: 0.58rem;
+        text-shadow: 0 0 10px var(--green);
+      }
+
+      .install-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+
+      .install-card {
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(11, 27, 45, 0.72);
+      }
+
+      .install-card small {
+        display: block;
+        margin-bottom: 14px;
+        color: var(--faint);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      pre {
+        overflow-x: auto;
+        margin: 0;
+        color: #b8d8ff;
+        font:
+          0.79rem/1.65 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .install-note {
+        margin: 22px 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      .cta {
+        display: flex;
+        gap: 30px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 46px 0 100px;
+      }
+
+      .cta h2 {
+        margin-bottom: 8px;
+        font-size: clamp(2rem, 4vw, 3.5rem);
+      }
+
+      .cta p {
+        margin-bottom: 0;
+        color: var(--muted);
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+      }
+
+      .footer-inner {
+        display: flex;
+        gap: 24px;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 92px;
+        color: var(--faint);
+        font-size: 0.82rem;
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 20px;
+      }
+
+      .footer-links a:hover {
+        color: var(--ink);
+      }
+
+      html[data-lang="en"] .zh,
+      html[data-lang="zh"] .en {
+        display: none !important;
+      }
+
+      @media (max-width: 900px) {
+        .hero {
+          grid-template-columns: 1fr;
+          min-height: 0;
+          padding-top: 70px;
+        }
+
+        .hero-content {
+          max-width: 720px;
+        }
+
+        .terminal-wrap {
+          width: min(100%, 620px);
+        }
+
+        .section-head,
+        .privacy-panel {
+          grid-template-columns: 1fr;
+        }
+
+        .section-head {
+          gap: 18px;
+        }
+
+        .privacy-panel {
+          gap: 34px;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .shell {
+          width: min(calc(100% - 28px), var(--max));
+        }
+
+        .nav {
+          min-height: 68px;
+        }
+
+        .nav-link {
+          display: none;
+        }
+
+        .nav-actions {
+          gap: 9px;
+        }
+
+        .hero {
+          gap: 52px;
+          padding: 58px 0 76px;
+        }
+
+        h1 {
+          font-size: clamp(3rem, 15vw, 4.5rem);
+        }
+
+        .terminal {
+          transform: none;
+        }
+
+        .terminal-body {
+          min-height: 310px;
+          padding: 22px 18px;
+          font-size: 0.75rem;
+        }
+
+        .section {
+          padding: 78px 0;
+        }
+
+        .steps,
+        .feature-grid,
+        .install-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .step {
+          min-height: 210px;
+        }
+
+        .step::before {
+          margin-bottom: 36px;
+        }
+
+        .privacy-panel {
+          padding: 30px 22px;
+          border-radius: 16px;
+        }
+
+        .cta,
+        .footer-inner {
+          align-items: flex-start;
+        }
+
+        .cta {
+          flex-direction: column;
+        }
+
+        .footer-inner {
+          flex-direction: column;
+          padding: 26px 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        .button {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="shell">
+      <nav class="nav" aria-label="Main navigation">
+        <a class="brand" href="#top" aria-label="Clawser home">
+          <span class="brand-mark" aria-hidden="true"><span>R</span></span>
+          <span>Clawser</span>
+        </a>
+        <div class="nav-actions">
+          <a class="nav-link en" href="#how">How it works</a>
+          <a class="nav-link zh" href="#how">工作方式</a>
+          <a class="nav-link" href="privacy.html">
+            <span class="en">Privacy</span><span class="zh">隐私</span>
+          </a>
+          <a class="nav-link" href="https://github.com/agilecho2022-lgtm/clawser" rel="noreferrer"
+            >GitHub</a
+          >
+          <div class="language-switch" aria-label="Language">
+            <button type="button" data-language="en" aria-pressed="true">EN</button>
+            <button type="button" data-language="zh" aria-pressed="false">中文</button>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero shell">
+        <div class="hero-content">
+          <p class="eyebrow en">Local browser automation</p>
+          <p class="eyebrow zh">本地浏览器自动化</p>
+          <h1 class="en" aria-label="Automate the browser you already use">
+            Automate the browser <em>you already use</em>
+          </h1>
+          <h1 class="zh" aria-label="自动化你正在使用的浏览器">
+            自动化你<em>正在使用的浏览器</em>
+          </h1>
+          <p class="hero-copy en">
+            Clawser connects your own local scripts to a tab you choose. Keep the session you are
+            already signed into, and drive real workflows through a local CDP relay.
+          </p>
+          <p class="hero-copy zh">
+            Clawser 把你自己的本地脚本连接到你选择的标签页。保留已有登录状态，通过本机 CDP relay
+            操作真实工作流。
+          </p>
+          <div class="button-row">
+            <a class="button primary" href="#install">
+              <span class="en">Get started</span><span class="zh">开始使用</span>
+              <span class="arrow" aria-hidden="true">→</span>
+            </a>
+            <a class="button" href="https://github.com/agilecho2022-lgtm/clawser" rel="noreferrer">
+              <span class="en">View source</span><span class="zh">查看源码</span>
+            </a>
+          </div>
+          <div class="trust-row" aria-label="Project characteristics">
+            <span class="en">Open source · MIT</span><span class="zh">开源 · MIT</span>
+            <span class="en">Localhost only</span><span class="zh">仅连接本机</span>
+            <span class="en">User-initiated</span><span class="zh">由用户主动接入</span>
+          </div>
+        </div>
+
+        <div class="terminal-wrap" aria-label="Clawser terminal workflow illustration">
+          <div class="terminal">
+            <div class="terminal-head">
+              <i></i><i></i><i></i><span class="terminal-title">clawser — relay</span>
+            </div>
+            <div class="terminal-body">
+              <p><span class="prompt">$</span> <span class="command">clawser start</span></p>
+              <p class="success">✓ relay listening on 127.0.0.1:18792</p>
+              <p class="dim">waiting for a tab to be attached…</p>
+              <div class="relay-line">local connection</div>
+              <div class="browser-card">
+                <span class="browser-icon" aria-hidden="true">R</span>
+                <span>
+                  <strong class="en">Current browser tab</strong>
+                  <strong class="zh">当前浏览器标签页</strong>
+                  <small class="en">attached by you</small>
+                  <small class="zh">由你主动接入</small>
+                </span>
+                <span class="on-badge">ON</span>
+              </div>
+              <p style="margin-top: 22px">
+                <span class="prompt">$</span>
+                <span class="command">clawser snapshot --json</span>
+              </p>
+              <p class="success">✓ tab ready for automation</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="how">
+        <div class="shell">
+          <div class="section-head">
+            <p class="kicker en">How it works</p>
+            <p class="kicker zh">工作方式</p>
+            <div>
+              <h2 class="en">Your browser. Your scripts. One local bridge.</h2>
+              <h2 class="zh">你的浏览器，你的脚本，一条本地连接。</h2>
+              <p class="section-intro en">
+                Clawser does not launch a separate, isolated browser. It works with a tab you
+                already have open, including its current session and sign-in state.
+              </p>
+              <p class="section-intro zh">
+                Clawser
+                不会另行启动隔离的浏览器实例，而是使用你已经打开的标签页，并保留当前会话与登录状态。
+              </p>
+            </div>
+          </div>
+          <div class="steps">
+            <article class="step">
+              <h3 class="en">Start the client</h3>
+              <h3 class="zh">启动客户端</h3>
+              <p class="en">Run Clawser on your computer to open the relay on 127.0.0.1.</p>
+              <p class="zh">在电脑上运行 Clawser，在 127.0.0.1 上开启 relay。</p>
+            </article>
+            <article class="step">
+              <h3 class="en">Choose a tab</h3>
+              <h3 class="zh">选择标签页</h3>
+              <p class="en">Use the toolbar action to attach the exact tab you want to control.</p>
+              <p class="zh">通过工具栏操作，明确接入你想控制的标签页。</p>
+            </article>
+            <article class="step">
+              <h3 class="en">Drive the workflow</h3>
+              <h3 class="zh">执行工作流</h3>
+              <p class="en">Your script operates the tab through the Chrome DevTools Protocol.</p>
+              <p class="zh">你的脚本通过 Chrome DevTools Protocol 操作该标签页。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="capabilities">
+        <div class="shell">
+          <div class="section-head">
+            <p class="kicker en">Built for real workflows</p>
+            <p class="kicker zh">面向真实工作流</p>
+            <div>
+              <h2 class="en">A practical automation surface for developers.</h2>
+              <h2 class="zh">为开发者提供实用的浏览器自动化能力。</h2>
+              <p class="section-intro en">
+                Inspect, interact, verify, and troubleshoot from scripts or the command line.
+              </p>
+              <p class="section-intro zh">通过脚本或命令行完成检查、交互、验证和问题排查。</p>
+            </div>
+          </div>
+          <div class="feature-grid">
+            <article class="feature">
+              <span class="feature-code">01 / INSPECT</span>
+              <h3 class="en">See what the page exposes</h3>
+              <h3 class="zh">读取页面可见状态</h3>
+              <p class="en">Tabs, snapshots, console output, page errors, and network activity.</p>
+              <p class="zh">查看标签页、页面快照、控制台输出、页面错误与网络活动。</p>
+            </article>
+            <article class="feature">
+              <span class="feature-code">02 / INTERACT</span>
+              <h3 class="en">Automate browser actions</h3>
+              <h3 class="zh">自动执行浏览器操作</h3>
+              <p class="en">Click, type, select, drag, upload, download, and handle dialogs.</p>
+              <p class="zh">点击、输入、选择、拖拽、上传、下载并处理对话框。</p>
+            </article>
+            <article class="feature">
+              <span class="feature-code">03 / VERIFY</span>
+              <h3 class="en">Test in a real session</h3>
+              <h3 class="zh">在真实会话中测试</h3>
+              <p class="en">Run integration checks in the environment and account state you use.</p>
+              <p class="zh">在你实际使用的环境和账号状态中运行集成验证。</p>
+            </article>
+            <article class="feature">
+              <span class="feature-code">04 / SCRIPT</span>
+              <h3 class="en">Compose your own workflow</h3>
+              <h3 class="zh">编排你自己的工作流</h3>
+              <p class="en">
+                Use CLI commands and structured JSON output from Node.js or RPA scripts.
+              </p>
+              <p class="zh">在 Node.js 或 RPA 脚本中使用 CLI 命令和结构化 JSON 输出。</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="privacy">
+        <div class="shell">
+          <div class="privacy-panel">
+            <div>
+              <p class="kicker en">Private by architecture</p>
+              <p class="kicker zh">架构即隐私</p>
+              <h2 class="en">Automation stays on your machine.</h2>
+              <h2 class="zh">自动化过程留在你的电脑上。</h2>
+              <p class="section-intro en">
+                The extension is a local bridge between your tab and the Clawser client you run. The
+                destination and behavior of your scripts remain under your control.
+              </p>
+              <p class="section-intro zh">
+                扩展只负责在标签页与你运行的 Clawser
+                客户端之间建立本地连接。脚本的用途和行为始终由你控制。
+              </p>
+            </div>
+            <div class="privacy-points">
+              <div class="privacy-point">
+                <span class="en">127.0.0.1 only</span><span class="zh">仅连接 127.0.0.1</span>
+              </div>
+              <div class="privacy-point">
+                <span class="en">No telemetry or analytics</span
+                ><span class="zh">无遥测、无统计</span>
+              </div>
+              <div class="privacy-point">
+                <span class="en">No browsing history stored</span
+                ><span class="zh">不保存浏览记录</span>
+              </div>
+              <div class="privacy-point">
+                <span class="en">No automatic tab attachment</span
+                ><span class="zh">不会自动接管标签页</span>
+              </div>
+              <a class="privacy-point" href="privacy.html">
+                <span class="en">Read the privacy policy →</span
+                ><span class="zh">阅读隐私政策 →</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="install">
+        <div class="shell">
+          <div class="section-head">
+            <p class="kicker en">Quick install</p>
+            <p class="kicker zh">快速安装</p>
+            <div>
+              <h2 class="en">From zero to a local relay.</h2>
+              <h2 class="zh">快速启动本地 relay。</h2>
+              <p class="section-intro en">
+                Install the client, start it, then attach the tab you want to automate.
+              </p>
+              <p class="section-intro zh">安装并启动客户端，然后接入你想自动化的标签页。</p>
+            </div>
+          </div>
+          <div class="install-grid">
+            <div class="install-card">
+              <small>Linux / macOS / WSL2 / Termux</small>
+              <pre><code>curl -fsSL https://www.agilecho.top/install.sh | bash</code></pre>
+            </div>
+            <div class="install-card">
+              <small>Windows PowerShell</small>
+              <pre><code>iex (irm https://www.agilecho.top/install.ps1)</code></pre>
+            </div>
+          </div>
+          <p class="install-note en">
+            Requires Node.js 22.12 or later. Full source installation and extension setup are
+            documented on GitHub.
+          </p>
+          <p class="install-note zh">
+            需要 Node.js 22.12 或更高版本。源码安装和扩展设置步骤详见 GitHub。
+          </p>
+        </div>
+      </section>
+
+      <section class="cta shell">
+        <div>
+          <p class="kicker en">Open source · MIT</p>
+          <p class="kicker zh">开源 · MIT</p>
+          <h2 class="en">Build the workflow you need.</h2>
+          <h2 class="zh">构建你需要的工作流。</h2>
+          <p class="en">Read the source, report an issue, or contribute a fix.</p>
+          <p class="zh">查看源码、反馈问题或贡献修复。</p>
+        </div>
+        <div class="button-row">
+          <a
+            class="button primary"
+            href="https://github.com/agilecho2022-lgtm/clawser"
+            rel="noreferrer"
+          >
+            GitHub <span class="arrow" aria-hidden="true">→</span>
+          </a>
+          <a
+            class="button"
+            href="https://github.com/agilecho2022-lgtm/clawser/issues"
+            rel="noreferrer"
+          >
+            <span class="en">Support</span><span class="zh">支持与反馈</span>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-inner shell">
+        <span>Clawser Browser Relay · 2026</span>
+        <div class="footer-links">
+          <a href="privacy.html"><span class="en">Privacy</span><span class="zh">隐私政策</span></a>
+          <a href="https://github.com/agilecho2022-lgtm/clawser/issues" rel="noreferrer">
+            <span class="en">Support</span><span class="zh">支持</span>
+          </a>
+          <a href="https://github.com/agilecho2022-lgtm/clawser" rel="noreferrer">MIT</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const controls = Array.from(document.querySelectorAll("[data-language]"));
+
+        function setLanguage(language) {
+          root.dataset.lang = language;
+          root.lang = language === "zh" ? "zh-CN" : "en";
+          document.title =
+            language === "zh" ? "Clawser — 本地浏览器自动化" : "Clawser — Local browser automation";
+          controls.forEach((control) => {
+            control.setAttribute("aria-pressed", String(control.dataset.language === language));
+          });
+        }
+
+        controls.forEach((control) => {
+          control.addEventListener("click", () => setLanguage(control.dataset.language));
+        });
+
+        const preferredLanguage = navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+        setLanguage(preferredLanguage);
+      })();
+    </script>
+  </body>
+</html>
