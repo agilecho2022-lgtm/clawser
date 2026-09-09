@@ -86,24 +86,19 @@ async function tryCallBrowserControlDaemon(
       ? Math.max(1, Math.floor(params.timeoutMs))
       : 5000;
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res: Response;
   try {
-    const res = await fetch(url, {
+    res = await fetch(url, {
       method,
       headers,
       body,
       signal: ctrl.signal,
     });
-    const text = await res.text();
-    const payload = text ? JSON.parse(text) : undefined;
-    if (!res.ok) {
-      const message =
-        payload && typeof payload === "object" && "error" in payload
-          ? String((payload as { error?: unknown }).error)
-          : text || `HTTP ${res.status}`;
-      throw new Error(message);
-    }
-    return { handled: true, payload };
   } catch (err) {
+    // Only transport-level failures (no HTTP response at all) count as the
+    // daemon being unreachable. Once a response has been received, its status
+    // must be surfaced as an HTTP error even if the body happens to contain
+    // network-looking keywords such as "fetch failed" / "econnrefused".
     const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
     if (
       message.includes("fetch failed") ||
@@ -113,6 +108,31 @@ async function tryCallBrowserControlDaemon(
       return { handled: false };
     }
     throw err;
+  }
+  try {
+    const text = await res.text();
+    if (!res.ok) {
+      let payload: unknown;
+      try {
+        payload = text ? JSON.parse(text) : undefined;
+      } catch {
+        // Authentication failures and proxy errors can have plain-text or HTML bodies.
+      }
+      const rawError =
+        payload && typeof payload === "object" && "error" in payload
+          ? (payload as { error?: unknown }).error
+          : undefined;
+      const detail =
+        rawError == null
+          ? text
+          : typeof rawError === "string"
+            ? rawError
+            : JSON.stringify(rawError);
+      const message = detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`;
+      throw new Error(message);
+    }
+    const payload = text ? JSON.parse(text) : undefined;
+    return { handled: true, payload };
   } finally {
     clearTimeout(timer);
   }
