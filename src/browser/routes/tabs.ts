@@ -1,3 +1,4 @@
+import { readWindowStateViaCdp } from "../cdp.js";
 import { BrowserProfileUnavailableError, BrowserTabNotFoundError } from "../errors.js";
 import type { BrowserRouteContext, ProfileContext } from "../server-context.js";
 import type { BrowserRequest, BrowserResponse, BrowserRouteRegistrar } from "./types.js";
@@ -130,7 +131,32 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
       run: async (profileCtx) => {
         await profileCtx.ensureBrowserAvailable();
         const tab = await profileCtx.openTab(url);
+        if (req.signal?.aborted && profileCtx.profile.driver === "extension") {
+          // Only this request owns this late result; never close pre-existing tabs.
+          await profileCtx.closeTab(tab.targetId);
+          return;
+        }
         res.json(tab);
+      },
+    });
+  });
+
+  app.get("/tabs/window-state", async (req, res) => {
+    const targetId = parseRequiredTargetId(res, req.query.targetId);
+    if (!targetId) {
+      return;
+    }
+    await withTabsProfileRoute({
+      req,
+      res,
+      ctx,
+      mapTabError: true,
+      run: async (profileCtx) => {
+        // Observation does not start browsers, attach tabs or change lastTargetId.
+        if (profileCtx.profile.driver !== "extension") {
+          throw new Error("window-state requires extension profile");
+        }
+        res.json(await readWindowStateViaCdp({ cdpUrl: profileCtx.profile.cdpUrl, targetId }));
       },
     });
   });

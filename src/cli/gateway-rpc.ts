@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { resolveBrowserConfig } from "../browser/config.js";
+import { resolveBrowserConfig, resolveProfile } from "../browser/config.js";
 import { resolveBrowserControlAuth } from "../browser/control-auth.js";
 import { loadConfig } from "../config/config.js";
 import { handleBrowserOnlyGatewayRequest } from "../gateway/server-methods/browser-only.js";
@@ -54,7 +54,7 @@ function buildBrowserControlUrl(params: BrowserRequestParams) {
       }
     }
   }
-  return { cfg, url };
+  return { cfg, url, resolved };
 }
 
 async function tryCallBrowserControlDaemon(
@@ -65,7 +65,7 @@ async function tryCallBrowserControlDaemon(
     return { handled: false };
   }
 
-  const { cfg, url } = buildBrowserControlUrl(params);
+  const { cfg, url, resolved } = buildBrowserControlUrl(params);
   const headers = new Headers();
   headers.set("Accept", "application/json");
   const auth = resolveBrowserControlAuth(cfg);
@@ -85,7 +85,26 @@ async function tryCallBrowserControlDaemon(
     typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
       ? Math.max(1, Math.floor(params.timeoutMs))
       : 5000;
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const profileName =
+    typeof params.query?.profile === "string" && params.query.profile.trim()
+      ? params.query.profile.trim()
+      : resolved.defaultProfile;
+  const extensionOpen =
+    method === "POST" &&
+    params.path === "/tabs/open" &&
+    resolveProfile(resolved, profileName)?.driver === "extension";
+  const timer = setTimeout(
+    () =>
+      ctrl.abort(
+        extensionOpen
+          ? new DOMException(
+              `browser request timeout: POST /tabs/open (${timeoutMs} ms)`,
+              "TimeoutError",
+            )
+          : undefined,
+      ),
+    timeoutMs,
+  );
   let res: Response;
   try {
     res = await fetch(url, {
@@ -95,6 +114,12 @@ async function tryCallBrowserControlDaemon(
       signal: ctrl.signal,
     });
   } catch (err) {
+    clearTimeout(timer);
+    // A timed-out extension open may still create its first tab. Never issue
+    // another createTarget through the local fallback for that same request.
+    if (ctrl.signal.aborted && (extensionOpen || params.path === "/tabs/window-state")) {
+      throw err;
+    }
     // Only transport-level failures (no HTTP response at all) count as the
     // daemon being unreachable. Once a response has been received, its status
     // must be surfaced as an HTTP error even if the body happens to contain
