@@ -175,7 +175,12 @@ export function createProfileTabOps({
       ...ssrfPolicyOpts,
     })
       .then((r) => r.targetId)
-      .catch(() => null);
+      .catch((error) => {
+        if (capabilities.requiresRelay) {
+          throw error;
+        }
+        return null;
+      });
 
     if (createdViaCdp) {
       const profileState = getProfileState();
