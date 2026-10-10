@@ -760,6 +760,22 @@ async function handleForwardCdpCommand(msg) {
     return { tabs: attachedTabs }
   }
 
+  if (method === 'Clawser.getWindowState') {
+    const target = typeof params?.targetId === 'string' ? params.targetId : ''
+    const ownTabId = target ? getTabByTargetId(target) : null
+    if (!ownTabId) throw new Error('Window observation target is not attached')
+    const tab = await chrome.tabs.get(ownTabId)
+    const window = await chrome.windows.get(tab.windowId)
+    const evaluated = await chrome.debugger.sendCommand({ tabId: ownTabId }, 'Runtime.evaluate', {
+      expression: 'document.visibilityState', returnByValue: true, timeout: 1000,
+    })
+    if (evaluated.exceptionDetails || typeof evaluated.result?.value !== 'string') {
+      throw new Error('Window observation visibilityState unavailable')
+    }
+    return { targetId: target, windowId: window.id, state: window.state,
+      focused: window.focused, visibilityState: evaluated.result.value }
+  }
+
   const bySession = sessionId ? getTabBySessionId(sessionId) : null
   const targetId = typeof params?.targetId === 'string' ? params.targetId : undefined
   const tabId =

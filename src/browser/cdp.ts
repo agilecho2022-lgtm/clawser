@@ -540,3 +540,29 @@ export type QueryMatch = {
   href?: string;
   outerHTML?: string;
 };
+
+/** Read the exact owning window through extension APIs; never activate the tab. */
+export async function readWindowStateViaCdp(opts: { cdpUrl: string; targetId: string }) {
+  const version = await fetchJson<{ webSocketDebuggerUrl: string }>(
+    appendCdpPath(opts.cdpUrl, "/json/version"),
+    500,
+  );
+  const wsUrl = normalizeCdpWsUrl(version.webSocketDebuggerUrl, opts.cdpUrl);
+  return withCdpSocket(
+    wsUrl,
+    async (send) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          send("Clawser.getWindowState", { targetId: opts.targetId }),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error("window-state request timeout")), 1000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    { handshakeTimeoutMs: 500 },
+  );
+}

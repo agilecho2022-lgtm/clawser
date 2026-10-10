@@ -77,6 +77,8 @@ describe("browser CLI help", () => {
         attach [options] [urlContains]      Attach Clawser to Chrome tab(s)
         tab                                 Tab shortcuts (index-based)
         open <url>                          Open a URL in a new tab
+        window-state [options]              Read an attached target's owning window
+                                            and visibility without activating it
         focus <targetId>                    Focus a tab by target id (or unique
                                             prefix)
         close [targetId]                    Close a tab (target id optional)

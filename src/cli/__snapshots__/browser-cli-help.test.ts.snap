@@ -101,6 +101,18 @@ Options:
 
 ---
 
+## window-state
+
+Usage: clawser browser window-state [options]
+
+Read an attached target's owning window and visibility without activating it
+
+Options:
+  --target-id <targetId>  Exact attached target id
+  -h, --help              display help for command
+
+---
+
 ## focus
 
 Usage: clawser browser focus [options] <targetId>

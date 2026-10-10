@@ -360,6 +360,28 @@ export function registerBrowserManageCommands(
     });
 
   browser
+    .command("window-state")
+    .description("Read an attached target's owning window and visibility without activating it")
+    .requiredOption("--target-id <targetId>", "Exact attached target id")
+    .action(async (options, cmd) => {
+      const parent = parentOpts(cmd);
+      await runBrowserCommand(async () => {
+        const result = await callBrowserRequest(
+          parent,
+          {
+            method: "GET",
+            path: "/tabs/window-state",
+            query: { ...resolveProfileQuery(parent?.browserProfile), targetId: options.targetId },
+          },
+          { timeoutMs: 2000 },
+        );
+        if (!printJsonResult(parent, result)) {
+          defaultRuntime.log(JSON.stringify(result));
+        }
+      });
+    });
+
+  browser
     .command("focus")
     .description("Focus a tab by target id (or unique prefix)")
     .argument("<targetId>", "Target id or unique prefix")
