@@ -336,6 +336,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
     const relayAuthTokens = new Set([relayAuthToken]);
 
     let extensionWs: WebSocket | null = null;
+    let lastPongAt: number | null = null;
     const cdpClients = new Set<WebSocket>();
     const connectedTargets = new Map<string, ConnectedTarget>();
     let downloadBehavior: DownloadBehavior | null = null;
@@ -426,11 +427,14 @@ export async function ensureChromeExtensionRelayServer(opts: {
         resolve: (v: unknown) => void;
         reject: (e: Error) => void;
         timer: NodeJS.Timeout;
+        method: string;
+        targetId?: string;
+        startedAt: number;
       }
     >();
     let nextExtensionId = 1;
 
-    const sendToExtension = async (payload: ExtensionForwardCommandMessage): Promise<unknown> => {
+    const sendToExtension = async (payload: ExtensionForwardCommandMessage, timeoutMs = 30_000): Promise<unknown> => {
       const ws = extensionWs;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         throw new Error("Chrome extension not connected");
@@ -440,8 +444,12 @@ export async function ensureChromeExtensionRelayServer(opts: {
         const timer = setTimeout(() => {
           pendingExtension.delete(payload.id);
           reject(new Error(`extension request timeout: ${payload.params.method}`));
-        }, 30_000);
-        pendingExtension.set(payload.id, { resolve, reject, timer });
+        }, timeoutMs);
+        pendingExtension.set(payload.id, { resolve, reject, timer,
+          method: payload.params.method,
+          targetId: typeof (payload.params.params as Record<string, unknown>)?.targetId === "string" ? (payload.params.params as { targetId: string }).targetId :
+            connectedTargets.get(payload.params.sessionId || "")?.targetId,
+          startedAt: Date.now() });
       });
     };
 
@@ -855,7 +863,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
         return;
       }
 
-      if (path.startsWith("/json")) {
+      if (path.startsWith("/json") || path === "/extension/diagnostics") {
         const token = getRelayAuthTokenFromRequest(req, url);
         if (!token || !relayAuthTokens.has(token)) {
           res.writeHead(401);
@@ -881,9 +889,34 @@ export async function ensureChromeExtensionRelayServer(opts: {
         res.end(
           JSON.stringify({
             connected: extensionConnected(),
+            lastPongAgoMs: lastPongAt === null ? null : Math.max(0, Date.now() - lastPongAt),
             ...(extensionHandshakeError ? { error: extensionHandshakeError } : {}),
           }),
         );
+        return;
+      }
+
+      if (path === "/extension/diagnostics" && req.method === "GET") {
+        void (async () => {
+        const now = Date.now();
+        const diagnostic = {
+          connected: extensionConnected(),
+          lastPongAgoMs: lastPongAt === null ? null : Math.max(0, now - lastPongAt),
+          pendingRequests: Array.from(pendingExtension.values()).filter(p => p.method !== "Clawser.diagnosticSnapshot")
+            .map(p => ({ method: p.method, targetId: p.targetId ?? null, waitedMs: Math.max(0, now - p.startedAt) })),
+        };
+        let snapshot: unknown;
+        let snapshotError: string | undefined;
+        try {
+          snapshot = await sendToExtension({ id: nextExtensionId++, method: "forwardCDPCommand",
+            params: { method: "Clawser.diagnosticSnapshot", params: {} } }, 1900);
+        } catch (error) {
+          snapshotError = String(error instanceof Error ? error.message : error);
+          if (snapshotError.includes("extension request timeout")) snapshotError = "快照超时";
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ...diagnostic, snapshot, snapshotError }));
+        })();
         return;
       }
 
@@ -1039,6 +1072,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
     wssExtension.on("connection", (ws) => {
       extensionWs = ws;
+      lastPongAt = null;
       clearExtensionDisconnectCleanupTimer();
       // 注意：不在这里 flush 重连等待者——连接建立后还要过协议握手，
       // 握手成功（handleExtensionConnect）时才视为扩展真正就绪并 flush(true)。
@@ -1146,6 +1180,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
         if (parsed && typeof parsed === "object" && "method" in parsed) {
           if ((parsed as ExtensionPongMessage).method === "pong") {
+            lastPongAt = Date.now();
             return;
           }
           if ((parsed as ExtensionForwardEventMessage).method !== "forwardCDPEvent") {

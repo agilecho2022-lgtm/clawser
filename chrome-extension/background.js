@@ -5,6 +5,14 @@ import {
   isRetryableReconnectError,
   reconnectDelayMs,
 } from './background-utils.js'
+import { recordWorkerStart } from './diagnostic-worker.js'
+
+const workerStartedAt = Date.now()
+let workerDiagnostic = { startedAt: workerStartedAt, startSequence: null }
+void recordWorkerStart(chrome, workerStartedAt).then(worker => {
+  workerDiagnostic = worker
+  try { sendToRelay({ method: 'workerDiagnostic', params: { worker } }) } catch {}
+})
 
 const DEFAULT_PORT = 18792
 
@@ -359,7 +367,7 @@ function sendToRelay(payload) {
   ws.send(JSON.stringify(payload))
 }
 
-function ensureGatewayHandshakeStarted(payload) {
+function ensureGatewayHandshakeStarted(payload, worker) {
   if (relayConnectRequestId) return
   const nonce = typeof payload?.nonce === 'string' ? payload.nonce.trim() : ''
   relayConnectRequestId = `ext-connect-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
@@ -380,6 +388,7 @@ function ensureGatewayHandshakeStarted(payload) {
       scopes: ['operator.read', 'operator.write'],
       caps: [],
       commands: [],
+      worker,
       nonce: nonce || undefined,
     },
   })
@@ -428,7 +437,7 @@ async function onRelayMessage(text) {
 
   if (msg && msg.type === 'event' && msg.event === 'connect.challenge') {
     try {
-      ensureGatewayHandshakeStarted(msg.payload)
+      ensureGatewayHandshakeStarted(msg.payload, workerDiagnostic)
     } catch (err) {
       console.warn('gateway connect handshake start failed', err instanceof Error ? err.message : String(err))
       relayConnectRequestId = null
@@ -774,6 +783,22 @@ async function handleForwardCdpCommand(msg) {
     }
     return { targetId: target, windowId: window.id, state: window.state,
       focused: window.focused, visibilityState: evaluated.result.value }
+  }
+
+  if (method === 'Clawser.diagnosticSnapshot') {
+    const [allTabs, targets] = await Promise.all([chrome.tabs.query({}), chrome.debugger.getTargets()])
+    const windows = new Map()
+    for (const tab of allTabs) {
+      if (!windows.has(tab.windowId)) windows.set(tab.windowId, chrome.windows.get(tab.windowId))
+    }
+    return { tabs: await Promise.all(allTabs.map(async tab => {
+      let window
+      try { window = await windows.get(tab.windowId) } catch { window = {} }
+      return { tabId: tab.id, url: tab.url || '', discarded: tab.discarded ?? null,
+        frozen: tab.frozen ?? null, status: tab.status, active: tab.active, windowId: tab.windowId,
+        state: window.state ?? null, focused: window.focused ?? null,
+        attached: targets.some(target => target.tabId === tab.id && target.attached === true) }
+    })) }
   }
 
   const bySession = sessionId ? getTabBySessionId(sessionId) : null
