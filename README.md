@@ -2,24 +2,24 @@
 
 Version: `2026.3.12`
 
-Clawser is a local Chrome automation CLI. It starts a local relay, connects to
-Chrome through the **Clawser Browser Relay** extension, and exposes browser
+Clawser is a local Chrome automation CLI. It starts a local relay, connects to  
+Chrome through the **Clawser Browser Relay** extension, and exposes browser  
 operations as CLI commands that are easy to call from scripts.
 
-This checkout also includes a lightweight Go tray/menu bar helper for starting
+This checkout also includes a lightweight Go tray/menu bar helper for starting  
 and stopping the local relay.
 
-Chinese documentation: [README_ZH.md](README_ZH.md)
+Chinese documentation: [README\_ZH.md](README_ZH.md)
 
 ## What Works Today
 
 - Start and stop the local browser relay.
-- Open Chrome automatically on `clawser start` when Chrome is not already
+- Open Chrome automatically on `clawser start` when Chrome is not already  
   running.
 - Attach the current Chrome tab by clicking the pinned Chrome extension.
-- Inspect tabs, snapshots, console messages, errors, requests, cookies, and
+- Inspect tabs, snapshots, console messages, errors, requests, cookies, and  
   storage.
-- Interact with pages by ref: click, type, press, hover, drag, select, upload,
+- Interact with pages by ref: click, type, press, hover, drag, select, upload,  
   wait, evaluate, screenshots, downloads, dialogs, and traces.
 - Run as a CLI or through the included macOS menu bar helper.
 - Use JSON output for Node.js/RPA scripts.
@@ -27,10 +27,10 @@ Chinese documentation: [README_ZH.md](README_ZH.md)
 Current intentional limits:
 
 - `clawser stop` stops the relay only. It does not close Chrome.
-- A tab can be connected with `clawser attach` (no clicking needed) or by
-  clicking the pinned extension icon on the target tab; the badge shows `ON`
+- A tab can be connected with `clawser attach` (no clicking needed) or by  
+  clicking the pinned extension icon on the target tab; the badge shows `ON`  
   once attached.
-- The tray app is currently a local development app bundle, not a signed
+- The tray app is currently a local development app bundle, not a signed  
   installer.
 
 ## Requirements
@@ -54,11 +54,11 @@ Windows native PowerShell:
 iex (irm https://www.agilecho.top/install.ps1)
 ```
 
-The quick install script installs the source checkout to `~/.clawser-src` and
-links the `clawser` command to `~/.local/bin/clawser`. If `~/.local/bin` is not
+The quick install script installs the source checkout to `~/.clawser-src` and  
+links the `clawser` command to `~/.local/bin/clawser`. If `~/.local/bin` is not  
 on `PATH`, the script prints the line to add to your shell profile.
 
-You can override the source, branch, and install directory with environment
+You can override the source, branch, and install directory with environment  
 variables:
 
 ```bash
@@ -101,10 +101,10 @@ node clawser.mjs status
 
 ## Chrome Extension Setup
 
-**Microsoft Edge**: the extension is also available from the Edge Add-ons
+**Microsoft Edge**: the extension is also available from the Edge Add-ons  
 store, so no manual unpacked load is needed.
 
-**Manual install** (Chrome and Edge both work the same way): install the
+**Manual install** (Chrome and Edge both work the same way): install the  
 unpacked extension into Clawser's state directory:
 
 ```bash
@@ -140,7 +140,7 @@ The relay listens on:
 http://127.0.0.1:18792/
 ```
 
-When Chrome is not running, `clawser start` opens Chrome with `about:blank`.
+When Chrome is not running, `clawser start` opens Chrome with `about:blank`.  
 It does not attach a tab by itself.
 
 Connect a tab with the CLI (no clicking needed):
@@ -150,7 +150,7 @@ clawser attach zzjb.rsj.sh.gov.cn   # attach tabs whose URL contains the host
 clawser attach --all                # attach all ordinary tabs
 ```
 
-Or open the target tab, then click the pinned **Clawser Browser Relay**
+Or open the target tab, then click the pinned **Clawser Browser Relay**  
 extension icon on that tab. The badge should show `ON`.
 
 Check relay attachment:
@@ -211,7 +211,7 @@ cd tray
 open -n "/tmp/Clawser Tray.app"
 ```
 
-The local app bundle is written to `/tmp` so development builds do not add
+The local app bundle is written to `/tmp` so development builds do not add  
 generated binaries to the repository.
 
 The tray app resolves Clawser in this order:
@@ -220,7 +220,7 @@ The tray app resolves Clawser in this order:
 2. The nearest parent checkout containing `clawser.mjs`
 3. `clawser` on `PATH`
 
-The tray app uses the same CLI behavior as `clawser start` and `clawser stop`.
+The tray app uses the same CLI behavior as `clawser start` and `clawser stop`.  
 It starts/stops the relay only; it does not click the Chrome extension for you.
 
 ## Common CLI Commands
@@ -335,7 +335,7 @@ snapshot("html", selector)
   -> clawser browser --json snapshot --format ai --selector <selector>
 ```
 
-The `ai` snapshot returns `refs`, which can be used by `click`, `type`, `hover`,
+The `ai` snapshot returns `refs`, which can be used by `click`, `type`, `hover`,  
 and related commands.
 
 ## State Directory
@@ -359,7 +359,7 @@ The relay token is fixed to:
 CLAWSER
 ```
 
-The Chrome extension adds the token automatically. Users do not need to enter a
+The Chrome extension adds the token automatically. Users do not need to enter a  
 token in the extension.
 
 ## Troubleshooting
