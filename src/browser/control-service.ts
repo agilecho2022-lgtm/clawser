@@ -2,16 +2,12 @@ import { loadConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveBrowserConfig } from "./config.js";
 import { ensureBrowserControlAuth } from "./control-auth.js";
-import { createBrowserRuntimeState, stopBrowserRuntime } from "./runtime-lifecycle.js";
+import { createBrowserRuntimeState } from "./runtime-lifecycle.js";
 import { type BrowserServerState, createBrowserRouteContext } from "./server-context.js";
 
 let state: BrowserServerState | null = null;
 const log = createSubsystemLogger("browser");
 const logService = log.child("service");
-
-export function getBrowserControlState(): BrowserServerState | null {
-  return state;
-}
 
 export function createBrowserControlContext() {
   return createBrowserRouteContext({
@@ -51,16 +47,4 @@ export async function startBrowserControlServiceFromConfig(): Promise<BrowserSer
     `Browser control service ready (profiles=${Object.keys(resolved.profiles).length})`,
   );
   return state;
-}
-
-export async function stopBrowserControlService(): Promise<void> {
-  const current = state;
-  await stopBrowserRuntime({
-    current,
-    getState: () => state,
-    clearState: () => {
-      state = null;
-    },
-    onWarn: (message) => logService.warn(message),
-  });
 }

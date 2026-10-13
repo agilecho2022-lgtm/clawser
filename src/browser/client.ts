@@ -110,46 +110,6 @@ export async function browserStatus(
   });
 }
 
-export async function browserProfiles(baseUrl?: string): Promise<ProfileStatus[]> {
-  const res = await fetchBrowserJson<{ profiles: ProfileStatus[] }>(
-    withBaseUrl(baseUrl, `/profiles`),
-    {
-      timeoutMs: 3000,
-    },
-  );
-  return res.profiles ?? [];
-}
-
-export async function browserStart(baseUrl?: string, opts?: { profile?: string }): Promise<void> {
-  const q = buildProfileQuery(opts?.profile);
-  await fetchBrowserJson(withBaseUrl(baseUrl, `/start${q}`), {
-    method: "POST",
-    timeoutMs: 15000,
-  });
-}
-
-export async function browserStop(baseUrl?: string, opts?: { profile?: string }): Promise<void> {
-  const q = buildProfileQuery(opts?.profile);
-  await fetchBrowserJson(withBaseUrl(baseUrl, `/stop${q}`), {
-    method: "POST",
-    timeoutMs: 15000,
-  });
-}
-
-export async function browserResetProfile(
-  baseUrl?: string,
-  opts?: { profile?: string },
-): Promise<BrowserResetProfileResult> {
-  const q = buildProfileQuery(opts?.profile);
-  return await fetchBrowserJson<BrowserResetProfileResult>(
-    withBaseUrl(baseUrl, `/reset-profile${q}`),
-    {
-      method: "POST",
-      timeoutMs: 20000,
-    },
-  );
-}
-
 export type BrowserCreateProfileResult = {
   ok: true;
   profile: string;
@@ -159,49 +119,11 @@ export type BrowserCreateProfileResult = {
   isRemote: boolean;
 };
 
-export async function browserCreateProfile(
-  baseUrl: string | undefined,
-  opts: {
-    name: string;
-    color?: string;
-    cdpUrl?: string;
-    driver?: "openclaw" | "extension";
-  },
-): Promise<BrowserCreateProfileResult> {
-  return await fetchBrowserJson<BrowserCreateProfileResult>(
-    withBaseUrl(baseUrl, `/profiles/create`),
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: opts.name,
-        color: opts.color,
-        cdpUrl: opts.cdpUrl,
-        driver: opts.driver,
-      }),
-      timeoutMs: 10000,
-    },
-  );
-}
-
 export type BrowserDeleteProfileResult = {
   ok: true;
   profile: string;
   deleted: boolean;
 };
-
-export async function browserDeleteProfile(
-  baseUrl: string | undefined,
-  profile: string,
-): Promise<BrowserDeleteProfileResult> {
-  return await fetchBrowserJson<BrowserDeleteProfileResult>(
-    withBaseUrl(baseUrl, `/profiles/${encodeURIComponent(profile)}`),
-    {
-      method: "DELETE",
-      timeoutMs: 20000,
-    },
-  );
-}
 
 export async function browserTabs(
   baseUrl?: string,
@@ -226,56 +148,6 @@ export async function browserOpenTab(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
     timeoutMs: 15000,
-  });
-}
-
-export async function browserFocusTab(
-  baseUrl: string | undefined,
-  targetId: string,
-  opts?: { profile?: string },
-): Promise<void> {
-  const q = buildProfileQuery(opts?.profile);
-  await fetchBrowserJson(withBaseUrl(baseUrl, `/tabs/focus${q}`), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ targetId }),
-    timeoutMs: 5000,
-  });
-}
-
-export async function browserCloseTab(
-  baseUrl: string | undefined,
-  targetId: string,
-  opts?: { profile?: string },
-): Promise<void> {
-  const q = buildProfileQuery(opts?.profile);
-  await fetchBrowserJson(withBaseUrl(baseUrl, `/tabs/${encodeURIComponent(targetId)}${q}`), {
-    method: "DELETE",
-    timeoutMs: 5000,
-  });
-}
-
-export async function browserTabAction(
-  baseUrl: string | undefined,
-  opts: {
-    action: "attach" | "attach-active" | "list" | "new" | "close" | "select";
-    all?: boolean;
-    index?: number;
-    urlContains?: string;
-    profile?: string;
-  },
-): Promise<unknown> {
-  const q = buildProfileQuery(opts.profile);
-  return await fetchBrowserJson(withBaseUrl(baseUrl, `/tabs/action${q}`), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: opts.action,
-      all: opts.all,
-      index: opts.index,
-      urlContains: opts.urlContains,
-    }),
-    timeoutMs: 10_000,
   });
 }
 
@@ -342,4 +214,4 @@ export async function browserSnapshot(
   });
 }
 
-// Actions beyond the basic read-only commands live in client-actions.ts.
+// Actions beyond the basic read-only commands live in client-actions-core.ts.

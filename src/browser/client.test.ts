@@ -3,11 +3,9 @@ import {
   browserAct,
   browserArmDialog,
   browserArmFileChooser,
-  browserConsoleMessages,
   browserNavigate,
-  browserPdfSave,
   browserScreenshotAction,
-} from "./client-actions.js";
+} from "./client-actions-core.js";
 import { browserOpenTab, browserSnapshot, browserStatus, browserTabs } from "./client.js";
 
 describe("browser client", () => {
@@ -175,27 +173,6 @@ describe("browser client", () => {
             json: async () => ({ ok: true }),
           } as unknown as Response;
         }
-        if (url.includes("/console?")) {
-          return {
-            ok: true,
-            json: async () => ({
-              ok: true,
-              targetId: "t1",
-              messages: [],
-            }),
-          } as unknown as Response;
-        }
-        if (url.endsWith("/pdf")) {
-          return {
-            ok: true,
-            json: async () => ({
-              ok: true,
-              path: "/tmp/a.pdf",
-              targetId: "t1",
-              url: "https://x",
-            }),
-          } as unknown as Response;
-        }
         if (url.endsWith("/screenshot")) {
           return {
             ok: true,
@@ -267,13 +244,6 @@ describe("browser client", () => {
     await expect(
       browserArmDialog("http://127.0.0.1:18791", { accept: true }),
     ).resolves.toMatchObject({ ok: true });
-    await expect(
-      browserConsoleMessages("http://127.0.0.1:18791", { level: "error" }),
-    ).resolves.toMatchObject({ ok: true, targetId: "t1" });
-    await expect(browserPdfSave("http://127.0.0.1:18791")).resolves.toMatchObject({
-      ok: true,
-      path: "/tmp/a.pdf",
-    });
     await expect(
       browserScreenshotAction("http://127.0.0.1:18791", { fullPage: true }),
     ).resolves.toMatchObject({ ok: true, path: "/tmp/a.png" });
