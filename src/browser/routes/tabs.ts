@@ -223,9 +223,15 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
           const rawUrlContains = toStringOrEmpty(
             (req.body as { urlContains?: unknown })?.urlContains,
           );
+          const businessUrls = (req.body as { businessUrls?: unknown })?.businessUrls;
+          if (businessUrls !== undefined && (!Array.isArray(businessUrls) || businessUrls.some(value => {
+            if (typeof value !== 'string') return true;
+            try { return !['http:', 'https:'].includes(new URL(value).protocol); } catch { return true; }
+          }))) return jsonError(res, 400, 'businessUrls must be an array of HTTP(S) URLs');
           const tabs = await profileCtx.attachTabs({
             all: (req.body as { all?: unknown })?.all === true,
             urlContains: rawUrlContains || undefined,
+            ...(businessUrls !== undefined ? { businessUrls: businessUrls as string[] } : {}),
           });
           return res.json({ ok: true, tabs });
         }

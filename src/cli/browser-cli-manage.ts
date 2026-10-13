@@ -33,6 +33,7 @@ async function callTabAction(
     all?: boolean;
     index?: number;
     urlContains?: string;
+    businessUrls?: string[];
   },
 ) {
   return callBrowserRequest(
@@ -217,7 +218,8 @@ export function registerBrowserManageCommands(
     .description("Attach Clawser to Chrome tab(s)")
     .argument("[urlContains]", "Attach tabs whose URL contains this text")
     .option("--all", "Attach all ordinary Chrome tabs", false)
-    .action(async (urlContains: string | undefined, opts: { all?: boolean }, cmd) => {
+    .option("--business-urls-json <json>", "Configured business URL set for discard protection")
+    .action(async (urlContains: string | undefined, opts: { all?: boolean; businessUrlsJson?: string }, cmd) => {
       const parent = parentOpts(cmd);
       const profile = parent?.browserProfile;
       const match = urlContains?.trim();
@@ -227,12 +229,23 @@ export function registerBrowserManageCommands(
         return;
       }
       await runBrowserCommand(async () => {
+        let businessUrls: string[] | undefined;
+        if (opts.businessUrlsJson !== undefined) {
+          const parsed: unknown = JSON.parse(opts.businessUrlsJson);
+          if (!Array.isArray(parsed) || parsed.some(value => {
+            if (typeof value !== 'string') return true;
+            try { const url = new URL(value); return !['http:', 'https:'].includes(url.protocol); } catch { return true; }
+          })) throw new Error('businessUrls must be an array of HTTP(S) URLs');
+          if (!opts.all && !match) throw new Error('businessUrls requires a URL match or --all');
+          businessUrls = parsed;
+        }
         const result =
           opts.all || match
             ? await callTabAction(parent, profile, {
                 action: "attach",
                 all: opts.all === true,
                 urlContains: match || undefined,
+                ...(businessUrls !== undefined ? { businessUrls } : {}),
               })
             : await callTabAction(parent, profile, { action: "attach-active" });
         if (printJsonResult(parent, result)) {

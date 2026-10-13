@@ -39,6 +39,77 @@ const tabBySession = new Map()
 /** @type {Map<string, number>} */
 const childSessionToTab = new Map()
 
+// Diagnostic history only; never used to select targets or decide outcomes.
+const tabDiagnosticEvents = []
+let businessTabProtectionUrls = []
+let businessTabProtectionRecords = {}
+let protectionQueue = Promise.resolve()
+const tabGenerations = new Map()
+const attachFlights = new Map()
+const ownedCreates = new Map()
+
+function tabGeneration(tabId) { return tabGenerations.get(tabId) || 0 }
+function assertTabGeneration(tabId, generation) {
+  if (tabGeneration(tabId) !== generation) throw new Error('BROWSER_TAB_MISSING: target attachment changed')
+}
+function protectionOperation(operation) {
+  const result = protectionQueue.then(operation)
+  protectionQueue = result.catch(() => {})
+  return result
+}
+async function saveProtectionRecords() {
+  await chrome.storage.local.set({ businessTabProtectionRecords })
+}
+async function protectionIdentityMatches(record, tab) {
+  if (!record.targetId || record.windowId !== tab.windowId) return false
+  const matches = (await chrome.debugger.getTargets()).filter(target => target.tabId === tab.id && target.id === record.targetId)
+  return matches.length === 1
+}
+async function releaseProtection(tabId, restore = true) {
+  return protectionOperation(async () => {
+    const record = businessTabProtectionRecords[tabId]
+    if (!record) return
+    delete businessTabProtectionRecords[tabId]
+    await saveProtectionRecords()
+    if (!restore) return
+    const tab = await chrome.tabs.get(tabId).catch(() => null)
+    if (tab && !tab.discarded && tab.autoDiscardable === false && await protectionIdentityMatches(record, tab)) {
+      await chrome.tabs.update(tabId, { autoDiscardable: record.originalAutoDiscardable })
+    }
+  })
+}
+async function protectBusinessTab(tabId, targetId, generation) {
+  return protectionOperation(async () => {
+    assertTabGeneration(tabId, generation)
+    const tab = await chrome.tabs.get(tabId)
+    assertTabGeneration(tabId, generation)
+    if (tab.discarded) throw new Error('BROWSER_TAB_MISSING: discarded tab')
+    if (!isBusinessTabUrl(tab.url) || tab.autoDiscardable !== true) return
+    // Persist ownership before changing the flag so a worker restart can restore it.
+    businessTabProtectionRecords[tabId] = { tabId, targetId, windowId: tab.windowId,
+      url: tab.url, originalAutoDiscardable: tab.autoDiscardable }
+    await saveProtectionRecords()
+    assertTabGeneration(tabId, generation)
+    await chrome.tabs.update(tabId, { autoDiscardable: false })
+    assertTabGeneration(tabId, generation)
+  })
+}
+function retireTabIdentity(tabId, reason) {
+  tabGenerations.set(tabId, tabGeneration(tabId) + 1)
+  reattachPending.delete(tabId)
+  const tab = tabs.get(tabId)
+  tabs.delete(tabId)
+  if (tab?.sessionId) tabBySession.delete(tab.sessionId)
+  for (const [sessionId, parent] of childSessionToTab) {
+    if (parent === tabId) childSessionToTab.delete(sessionId)
+  }
+  if (tab?.sessionId) {
+    try { sendToRelay({ method: 'forwardCDPEvent', params: { method: 'Target.detachedFromTarget',
+      params: { sessionId: tab.sessionId, targetId: tab.targetId, reason } } }) } catch {}
+  }
+  return tab
+}
+
 /** @type {Map<number, {resolve:(v:any)=>void, reject:(e:Error)=>void}>} */
 const pending = new Map()
 
@@ -69,9 +140,63 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function validateAttachedTab(tabId) {
+function isBusinessTabUrl(url) {
   try {
-    await chrome.tabs.get(tabId)
+    const current = new URL(url)
+    return businessTabProtectionUrls.some(value => {
+      try {
+        const configured = new URL(value)
+        const prefix = configured.pathname.replace(/\/$/, '')
+        return current.origin === configured.origin && (!prefix || current.pathname === prefix || current.pathname.startsWith(prefix + '/'))
+      } catch { return false }
+    })
+  } catch { return false }
+}
+
+function recordTabDiagnostic(event, nativeTab, identity = {}, options = {}) {
+  const eventAt = new Date().toISOString()
+  const tabId = nativeTab.id
+  const attachment = tabs.get(tabId)
+  const fields = (tab) => ({ tabId: tab.id, url: options.originOnly
+    ? (() => { try { return new URL(tab.url).origin } catch { return null } })() : tab.url ?? null,
+    discarded: tab.discarded ?? null, frozen: tab.frozen ?? null,
+    ...(!options.originOnly ? { status: tab.status ?? null } : {}), autoDiscardable: tab.autoDiscardable ?? null,
+    active: tab.active ?? null, windowId: tab.windowId ?? null })
+  const base = { event, eventAt, identitySource: 'attachment_projection', targetId: attachment?.targetId ?? null,
+    sessionId: attachment?.sessionId ?? null, worker: { ...workerDiagnostic }, ...identity }
+  const emit = (entry) => {
+    tabDiagnosticEvents.push(entry)
+    if (tabDiagnosticEvents.length > 100) tabDiagnosticEvents.shift()
+    try { sendToRelay({ method: 'tabDiagnostic', params: entry }) } catch {}
+  }
+  // Copy the Chrome event payload before any await: replacement/renderer exit
+  // can make a later query unavailable or give a different state.
+  emit({ ...base, ...fields(nativeTab), stage: 'event', observedAt: eventAt,
+    state: null, focused: null })
+  let timer
+  const collect = async () => {
+    const tab = nativeTab.windowId == null ? await chrome.tabs.get(tabId) : nativeTab
+    const window = await chrome.windows.get(tab.windowId)
+    return { ...fields(tab), state: window.state ?? null, focused: window.focused ?? null }
+  }
+  return Promise.race([collect(), new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('event snapshot timeout')), 2000)
+  })]).then(observation => {
+    emit({ ...base, ...observation, stage: 'observation', observedAt: new Date().toISOString() })
+  }).catch(error => {
+    emit({ ...base, tabId, stage: 'observation', observedAt: new Date().toISOString(),
+      observationError: String(error?.message || error) })
+  }).finally(() => clearTimeout(timer))
+}
+
+async function validateAttachedTab(tabId, expectedTargetId) {
+  try {
+    const tab = await chrome.tabs.get(tabId)
+    if (tab.discarded) return false
+    if (expectedTargetId) {
+      const matches = (await chrome.debugger.getTargets()).filter(target => target.tabId === tabId && target.id === expectedTargetId)
+      if (matches.length !== 1 || matches[0].attached !== true) return false
+    }
   } catch {
     return false
   }
@@ -152,7 +277,7 @@ async function rehydrateState() {
     // Retry once so transient busy/navigation states do not permanently drop
     // a still-attached tab after a service worker restart.
     for (const entry of entries) {
-      const valid = await validateAttachedTab(entry.tabId)
+      const valid = await validateAttachedTab(entry.tabId, entry.targetId)
       if (!valid) {
         tabs.delete(entry.tabId)
         tabBySession.delete(entry.sessionId)
@@ -186,7 +311,7 @@ async function ensureRelayConnection() {
     // gateway connect.challenge) cannot be missed.
     ws.onmessage = (event) => {
       if (ws !== relayWs) return
-      void whenReady(() => onRelayMessage(String(event.data || '')))
+      void whenReady(() => onRelayMessage(String(event.data || ''), ws))
     }
 
     await new Promise((resolve, reject) => {
@@ -295,10 +420,11 @@ async function reannounceAttachedTabs() {
 
     // Retry once here as well; reconnect races can briefly make an otherwise
     // healthy tab look unavailable.
-    const valid = await validateAttachedTab(tabId)
+    const generation = tabGeneration(tabId)
+    const valid = await validateAttachedTab(tabId, tab.targetId)
+    if (tabGeneration(tabId) !== generation || tabs.get(tabId) !== tab) continue
     if (!valid) {
-      tabs.delete(tabId)
-      if (tab.sessionId) tabBySession.delete(tab.sessionId)
+      await detachTab(tabId, 'target_unavailable')
       setBadge(tabId, 'off')
       void chrome.action.setTitle({
         tabId,
@@ -323,6 +449,17 @@ async function reannounceAttachedTabs() {
       // Target.getTargetInfo failed. Preserve at least targetId from
       // cached tab state so relay receives a stable identifier.
       targetInfo = tab.targetId ? { targetId: tab.targetId } : undefined
+    }
+
+    if (tabGeneration(tabId) !== generation || tabs.get(tabId) !== tab) continue
+    const [current, targets] = await Promise.all([
+      chrome.tabs.get(tabId).catch(() => null), chrome.debugger.getTargets().catch(() => []),
+    ])
+    if (tabGeneration(tabId) !== generation || tabs.get(tabId) !== tab) continue
+    const matches = targets.filter(target => target.tabId === tabId && target.id === tab.targetId)
+    if (!current || current.discarded || matches.length !== 1 || matches[0].attached !== true) {
+      await detachTab(tabId, 'target_unavailable')
+      continue
     }
 
     try {
@@ -426,7 +563,8 @@ function requestFromRelay(command) {
   })
 }
 
-async function onRelayMessage(text) {
+async function onRelayMessage(text, socket = relayWs) {
+  if (socket !== relayWs) return
   /** @type {any} */
   let msg
   try {
@@ -482,10 +620,10 @@ async function onRelayMessage(text) {
 
   if (msg && typeof msg.id === 'number' && msg.method === 'forwardCDPCommand') {
     try {
-      const result = await handleForwardCdpCommand(msg)
-      sendToRelay({ id: msg.id, result })
+      const result = await handleForwardCdpCommand(msg, socket)
+      if (socket === relayWs) sendToRelay({ id: msg.id, result })
     } catch (err) {
-      sendToRelay({ id: msg.id, error: err instanceof Error ? err.message : String(err) })
+      if (socket === relayWs) sendToRelay({ id: msg.id, error: err instanceof Error ? err.message : String(err) })
     }
   }
 }
@@ -521,8 +659,11 @@ function tabMatchesUrlContains(tab, urlContains) {
 
 async function attachTabForRelay(tab) {
   if (!tab?.id) return null
+  tab = await chrome.tabs.get(tab.id)
+  if (tab.discarded) throw new Error('BROWSER_TAB_MISSING: discarded tab')
   const existing = tabs.get(tab.id)
   if (existing?.state === 'connected' && existing.targetId) {
+    await protectBusinessTab(tab.id, existing.targetId, tabGeneration(tab.id))
     setBadge(tab.id, 'on')
     return {
       targetId: existing.targetId,
@@ -542,49 +683,64 @@ async function attachTabForRelay(tab) {
 }
 
 async function attachTab(tabId, opts = {}) {
-  const debuggee = { tabId }
-  await chrome.debugger.attach(debuggee, '1.3')
-  await chrome.debugger.sendCommand(debuggee, 'Page.enable').catch(() => {})
-
-  const info = /** @type {any} */ (await chrome.debugger.sendCommand(debuggee, 'Target.getTargetInfo'))
-  const targetInfo = info?.targetInfo
-  const targetId = String(targetInfo?.targetId || '').trim()
-  if (!targetId) {
-    throw new Error('Target.getTargetInfo returned no targetId')
+  if (attachFlights.has(tabId)) return attachFlights.get(tabId)
+  const generation = tabGeneration(tabId)
+  const operation = (async () => {
+    let acquired = false
+    try {
+      const tab = await chrome.tabs.get(tabId)
+      assertTabGeneration(tabId, generation)
+      if (tab.discarded) throw new Error('BROWSER_TAB_MISSING: discarded tab')
+      const existing = tabs.get(tabId)
+      if (existing?.state === 'connected') return existing
+      const debuggee = { tabId }
+      await chrome.debugger.attach(debuggee, '1.3')
+      acquired = true
+      assertTabGeneration(tabId, generation)
+      await chrome.debugger.sendCommand(debuggee, 'Page.enable').catch(() => {})
+      const info = await chrome.debugger.sendCommand(debuggee, 'Target.getTargetInfo')
+      assertTabGeneration(tabId, generation)
+      const current = await chrome.tabs.get(tabId)
+      if (current.discarded) throw new Error('BROWSER_TAB_MISSING: discarded tab')
+      const targetInfo = info?.targetInfo
+      const targetId = String(targetInfo?.targetId || '').trim()
+      if (!targetId) throw new Error('Target.getTargetInfo returned no targetId')
+      if (opts.expectedRelay && opts.expectedRelay !== relayWs) throw new Error('Relay disconnected while attaching created tab')
+      await protectBusinessTab(tabId, targetId, generation)
+      assertTabGeneration(tabId, generation)
+      if (opts.expectedRelay && opts.expectedRelay !== relayWs) throw new Error('Relay disconnected while attaching created tab')
+      const sid = nextSession++
+      const sessionId = `cb-tab-${sid}`
+      tabs.set(tabId, { state: 'connected', sessionId, targetId, attachOrder: sid })
+      tabBySession.set(sessionId, tabId)
+      if (!opts.skipAttachedEvent) sendToRelay({ method: 'forwardCDPEvent', params: {
+        method: 'Target.attachedToTarget', params: { sessionId,
+          targetInfo: { ...targetInfo, attached: true }, waitingForDebugger: false } } })
+      setBadge(tabId, 'on')
+      void chrome.action.setTitle({ tabId, title: 'Clawser Browser Relay: attached (click to detach)' })
+      await persistState()
+      return { sessionId, targetId }
+    } catch (error) {
+      // This flight owns only the debugger it successfully acquired, never the user tab.
+      if (acquired) {
+        const own = tabs.get(tabId)
+        if (own) retireTabIdentity(tabId, 'attach_failed')
+        await releaseProtection(tabId).catch(err => console.warn('protection rollback failed', tabId, String(err)))
+        await chrome.debugger.detach({ tabId }).catch(() => {})
+      }
+      throw error
+    }
+  })()
+  attachFlights.set(tabId, operation)
+  try { return await operation } finally {
+    if (attachFlights.get(tabId) === operation) attachFlights.delete(tabId)
   }
-
-  const sid = nextSession++
-  const sessionId = `cb-tab-${sid}`
-  const attachOrder = sid
-
-  tabs.set(tabId, { state: 'connected', sessionId, targetId, attachOrder })
-  tabBySession.set(sessionId, tabId)
-  void chrome.action.setTitle({
-    tabId,
-    title: 'Clawser Browser Relay: attached (click to detach)',
-  })
-
-  if (!opts.skipAttachedEvent) {
-    sendToRelay({
-      method: 'forwardCDPEvent',
-      params: {
-        method: 'Target.attachedToTarget',
-        params: {
-          sessionId,
-          targetInfo: { ...targetInfo, attached: true },
-          waitingForDebugger: false,
-        },
-      },
-    })
-  }
-
-  setBadge(tabId, 'on')
-  await persistState()
-
-  return { sessionId, targetId }
 }
 
 async function detachTab(tabId, reason) {
+  tabGenerations.set(tabId, tabGeneration(tabId) + 1)
+  reattachPending.delete(tabId)
+  await releaseProtection(tabId).catch(error => console.warn('protection restore failed', tabId, String(error)))
   const tab = tabs.get(tabId)
 
   // Send detach events for child sessions first.
@@ -720,7 +876,7 @@ async function connectOrToggleForActiveTab() {
   }
 }
 
-async function handleForwardCdpCommand(msg) {
+async function handleForwardCdpCommand(msg, expectedRelay) {
   const method = String(msg?.params?.method || '').trim()
   const params = msg?.params?.params || undefined
   const sessionId = typeof msg?.params?.sessionId === 'string' ? msg.params.sessionId : undefined
@@ -729,9 +885,24 @@ async function handleForwardCdpCommand(msg) {
     const url = typeof params?.url === 'string' ? params.url : 'about:blank'
     const tab = await chrome.tabs.create({ url, active: false })
     if (!tab.id) throw new Error('Failed to create tab')
+    const ownership = {}
+    ownedCreates.set(tab.id, ownership)
     await new Promise((r) => setTimeout(r, 100))
-    const attached = await attachTab(tab.id)
-    return { targetId: attached.targetId }
+    try {
+      const attached = await attachTab(tab.id, { expectedRelay })
+      if (expectedRelay && expectedRelay !== relayWs) throw new Error('Relay disconnected while creating tab')
+      return { targetId: attached.targetId }
+    } catch (error) {
+      // A native replacement/removal retires ownership; never close its successor.
+      if (ownedCreates.get(tab.id) === ownership) {
+        await chrome.tabs.remove(tab.id).catch(err => console.warn('create rollback failed', tab.id, String(err)))
+      } else {
+        console.warn('create rollback skipped: tab identity changed', tab.id)
+      }
+      throw error
+    } finally {
+      if (ownedCreates.get(tab.id) === ownership) ownedCreates.delete(tab.id)
+    }
   }
 
   if (method === 'Clawser.attachActiveTab') {
@@ -745,6 +916,19 @@ async function handleForwardCdpCommand(msg) {
   }
 
   if (method === 'Clawser.attachTabs') {
+    if (params?.businessUrls !== undefined) {
+      const values = params.businessUrls
+      if (!Array.isArray(values) || values.some(value => {
+        if (typeof value !== 'string') return true
+        try { return !['http:', 'https:'].includes(new URL(value).protocol) } catch { return true }
+      })) throw new Error('businessUrls must be an array of HTTP(S) URLs')
+      await chrome.storage.local.set({ businessTabProtectionUrls: values })
+      businessTabProtectionUrls = values.slice()
+      for (const tabId of Object.keys(businessTabProtectionRecords).map(Number)) {
+        const native = await chrome.tabs.get(tabId).catch(() => null)
+        if (!native || !isBusinessTabUrl(native.url)) await releaseProtection(tabId)
+      }
+    }
     const urlContains = typeof params?.urlContains === 'string' ? params.urlContains.trim() : ''
     const all = params?.all === true
     const candidates = (await chrome.tabs.query({}))
@@ -755,6 +939,9 @@ async function handleForwardCdpCommand(msg) {
       throw new Error(`No tabs matching ${urlContains}`)
     }
 
+    if (candidates.length && candidates.every(tab => tab.discarded)) {
+      throw new Error('BROWSER_TAB_MISSING: discarded tab')
+    }
     await ensureRelayConnection()
     const attachedTabs = []
     for (const tab of candidates) {
@@ -774,10 +961,13 @@ async function handleForwardCdpCommand(msg) {
     const ownTabId = target ? getTabByTargetId(target) : null
     if (!ownTabId) throw new Error('Window observation target is not attached')
     const tab = await chrome.tabs.get(ownTabId)
+    if (tab.discarded) throw new Error('BROWSER_TAB_MISSING: discarded tab')
+    const attachment = tabs.get(ownTabId)
     const window = await chrome.windows.get(tab.windowId)
     const evaluated = await chrome.debugger.sendCommand({ tabId: ownTabId }, 'Runtime.evaluate', {
       expression: 'document.visibilityState', returnByValue: true, timeout: 1000,
     })
+    if (tabs.get(ownTabId) !== attachment) throw new Error('BROWSER_TAB_MISSING: target attachment changed')
     if (evaluated.exceptionDetails || typeof evaluated.result?.value !== 'string') {
       throw new Error('Window observation visibilityState unavailable')
     }
@@ -791,10 +981,14 @@ async function handleForwardCdpCommand(msg) {
     for (const tab of allTabs) {
       if (!windows.has(tab.windowId)) windows.set(tab.windowId, chrome.windows.get(tab.windowId))
     }
-    return { tabs: await Promise.all(allTabs.map(async tab => {
+    return { recentEvents: tabDiagnosticEvents.slice(), tabs: await Promise.all(allTabs.map(async tab => {
       let window
       try { window = await windows.get(tab.windowId) } catch { window = {} }
-      return { tabId: tab.id, url: tab.url || '', discarded: tab.discarded ?? null,
+      const matches = targets.filter(target => target.tabId === tab.id)
+      const target = matches.length === 1 ? matches[0] : null
+      return { tabId: tab.id, targetId: target?.id || null,
+        ...(matches.length > 1 ? { targetMatch: 'ambiguous' } : {}), url: tab.url || '', discarded: tab.discarded ?? null,
+        autoDiscardable: tab.autoDiscardable ?? null,
         frozen: tab.frozen ?? null, status: tab.status, active: tab.active, windowId: tab.windowId,
         state: window.state ?? null, focused: window.focused ?? null,
         attached: targets.some(target => target.tabId === tab.id && target.attached === true) }
@@ -806,14 +1000,21 @@ async function handleForwardCdpCommand(msg) {
   const tabId =
     bySession?.tabId ||
     (targetId ? getTabByTargetId(targetId) : null) ||
-    (() => {
+    (!sessionId && !targetId ? (() => {
       for (const [id, tab] of tabs.entries()) {
         if (tab.state === 'connected') return id
       }
       return null
-    })()
+    })() : null)
 
-  if (!tabId) throw new Error(`No attached tab for method ${method}`)
+  if (!tabId) throw new Error(`BROWSER_TAB_MISSING: No attached tab for method ${method}`)
+  const generation = tabGeneration(tabId)
+  const nativeTab = await chrome.tabs.get(tabId).catch(() => null)
+  assertTabGeneration(tabId, generation)
+  if (!nativeTab || nativeTab.discarded) {
+    await detachTab(tabId, 'discarded_or_missing')
+    throw new Error('BROWSER_TAB_MISSING: discarded or missing tab')
+  }
 
   /** @type {chrome.debugger.DebuggerSession} */
   const debuggee = { tabId }
@@ -825,7 +1026,10 @@ async function handleForwardCdpCommand(msg) {
     } catch {
       // ignore
     }
-    return await chrome.debugger.sendCommand(debuggee, 'Runtime.enable', params)
+    assertTabGeneration(tabId, generation)
+    const result = await chrome.debugger.sendCommand(debuggee, 'Runtime.enable', params)
+    assertTabGeneration(tabId, generation)
+    return result
   }
 
   if (method === 'Target.closeTarget') {
@@ -865,7 +1069,9 @@ async function handleForwardCdpCommand(msg) {
       ? { ...debuggee, sessionId }
       : debuggee
 
-  return await chrome.debugger.sendCommand(debuggerSession, method, params)
+  const result = await chrome.debugger.sendCommand(debuggerSession, method, params)
+  assertTabGeneration(tabId, generation)
+  return result
 }
 
 function onDebuggerEvent(source, method, params) {
@@ -914,6 +1120,11 @@ async function onDebuggerDetach(source, reason) {
   } catch {
     // Tab is gone (closed) — normal cleanup
     void detachTab(tabId, reason)
+    return
+  }
+
+  if (tabInfo.discarded) {
+    await detachTab(tabId, 'discarded')
     return
   }
 
@@ -1002,55 +1213,63 @@ async function onDebuggerDetach(source, reason) {
   })
 }
 
+// Record native payloads immediately, independently of initialization and
+// lifecycle mutations below. Observations are read-only and best effort.
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  const related = tabs.has(tabId) || isBusinessTabUrl(tab.url)
+  const health = ['discarded', 'frozen', 'autoDiscardable']
+  if (related || health.some(key => key in change)) {
+    void recordTabDiagnostic('updated', tab, { change: related ? { ...change } : Object.fromEntries(
+      Object.entries(change).filter(([key]) => health.includes(key))) }, { originOnly: !related })
+  }
+})
+chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+  const previous = tabs.get(removedTabId)
+  void recordTabDiagnostic('replaced', { id: addedTabId }, { removedTabId,
+    targetId: previous?.targetId ?? null, sessionId: previous?.sessionId ?? null })
+})
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source.tabId != null) void recordTabDiagnostic('debugger_detach', { id: source.tabId }, { reason })
+})
+
 // Tab lifecycle listeners — clean up stale entries.
 chrome.tabs.onCreated.addListener((tab) => void whenReady(() => autoAttachOpenedTab(tab)))
 
-chrome.tabs.onRemoved.addListener((tabId) => void whenReady(() => {
-  reattachPending.delete(tabId)
-  if (!tabs.has(tabId)) return
-  const tab = tabs.get(tabId)
-  if (tab?.sessionId) tabBySession.delete(tab.sessionId)
-  tabs.delete(tabId)
-  for (const [childSessionId, parentTabId] of childSessionToTab.entries()) {
-    if (parentTabId === tabId) childSessionToTab.delete(childSessionId)
-  }
-  if (tab?.sessionId && tab?.targetId) {
-    try {
-      sendToRelay({
-        method: 'forwardCDPEvent',
-        params: {
-          method: 'Target.detachedFromTarget',
-          params: { sessionId: tab.sessionId, targetId: tab.targetId, reason: 'tab_closed' },
-        },
-      })
-    } catch {
-      // Relay may be down.
-    }
-  }
-  void persistState()
-}))
+chrome.tabs.onRemoved.addListener((tabId) => {
+  ownedCreates.delete(tabId)
+  retireTabIdentity(tabId, 'tab_closed')
+  void whenReady(async () => { await releaseProtection(tabId, false); await persistState() })
+})
 
-chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => void whenReady(() => {
-  const tab = tabs.get(removedTabId)
-  if (!tab) return
-  tabs.delete(removedTabId)
-  tabs.set(addedTabId, tab)
-  if (tab.sessionId) {
-    tabBySession.set(tab.sessionId, addedTabId)
+chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+  // New tabId needs a fresh successful attach; never copy the old target/session.
+  ownedCreates.delete(removedTabId)
+  retireTabIdentity(removedTabId, 'tab_replaced')
+  void whenReady(async () => { await releaseProtection(removedTabId, false); await persistState() })
+})
+
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  if (change.discarded === true) {
+    retireTabIdentity(tabId, 'discarded')
+    void whenReady(async () => {
+      await releaseProtection(tabId, false)
+      await chrome.debugger.detach({ tabId }).catch(() => {})
+      await persistState()
+    })
+  } else if ('autoDiscardable' in change && change.autoDiscardable !== false) {
+    void whenReady(() => releaseProtection(tabId, false))
+  } else if ('url' in change && !isBusinessTabUrl(tab.url)) {
+    void whenReady(() => releaseProtection(tabId))
   }
-  for (const [childSessionId, parentTabId] of childSessionToTab.entries()) {
-    if (parentTabId === removedTabId) {
-      childSessionToTab.set(childSessionId, addedTabId)
-    }
-  }
-  setBadge(addedTabId, 'on')
-  void persistState()
-}))
+})
 
 // Register debugger listeners at module scope so detach/event handling works
 // even when the relay WebSocket is down.
 chrome.debugger.onEvent.addListener((...args) => void whenReady(() => onDebuggerEvent(...args)))
-chrome.debugger.onDetach.addListener((...args) => void whenReady(() => onDebuggerDetach(...args)))
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source.tabId != null) tabGenerations.set(source.tabId, tabGeneration(source.tabId) + 1)
+  void whenReady(() => onDebuggerDetach(source, reason))
+})
 
 chrome.action.onClicked.addListener(() => void whenReady(() => connectOrToggleForActiveTab()))
 
@@ -1109,7 +1328,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 // Rehydrate state on service worker startup. Split: rehydration is the gate
 // (fast), relay reconnect runs in background (slow, non-blocking).
-const initPromise = rehydrateState()
+const initPromise = chrome.storage.local.get(['businessTabProtectionUrls', 'businessTabProtectionRecords']).then(stored => {
+  businessTabProtectionUrls = Array.isArray(stored.businessTabProtectionUrls) ? stored.businessTabProtectionUrls : []
+  businessTabProtectionRecords = stored.businessTabProtectionRecords || {}
+}).catch(() => {}).then(() => rehydrateState())
 
 initPromise.then(() => {
   ensureRelayConnection().then(() => {

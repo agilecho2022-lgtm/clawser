@@ -164,12 +164,14 @@ export async function attachTabsViaCdp(opts: {
   cdpUrl: string;
   all?: boolean;
   urlContains?: string;
+  businessUrls?: string[];
 }): Promise<{ tabs: AttachedTabResult[] }> {
   const wsUrl = await resolveBrowserWsUrl(opts.cdpUrl);
   return await withCdpSocket(wsUrl, async (send) => {
     const attached = (await send("Clawser.attachTabs", {
       all: opts.all === true,
       urlContains: opts.urlContains,
+      ...(opts.businessUrls !== undefined ? { businessUrls: opts.businessUrls } : {}),
     })) as { tabs?: AttachedTabResult[] };
     const tabs = Array.isArray(attached?.tabs) ? attached.tabs : [];
     return {

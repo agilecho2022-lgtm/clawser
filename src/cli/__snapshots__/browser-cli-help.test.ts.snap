@@ -63,11 +63,13 @@ Usage: clawser browser attach [options] [urlContains]
 Attach Clawser to Chrome tab(s)
 
 Arguments:
-  urlContains  Attach tabs whose URL contains this text
+  urlContains                  Attach tabs whose URL contains this text
 
 Options:
-  --all        Attach all ordinary Chrome tabs (default: false)
-  -h, --help   display help for command
+  --all                        Attach all ordinary Chrome tabs (default: false)
+  --business-urls-json <json>  Configured business URL set for discard
+                               protection
+  -h, --help                   display help for command
 
 ---
 

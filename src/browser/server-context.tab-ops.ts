@@ -37,7 +37,7 @@ type TabOpsDeps = {
 
 type ProfileTabOps = {
   attachActiveTab: () => Promise<BrowserTab>;
-  attachTabs: (opts: { all?: boolean; urlContains?: string }) => Promise<BrowserTab[]>;
+  attachTabs: (opts: { all?: boolean; urlContains?: string; businessUrls?: string[] }) => Promise<BrowserTab[]>;
   listTabs: () => Promise<BrowserTab[]>;
   openTab: (url: string) => Promise<BrowserTab>;
 };
@@ -254,11 +254,13 @@ export function createProfileTabOps({
   const attachTabs = async (opts: {
     all?: boolean;
     urlContains?: string;
+    businessUrls?: string[];
   }): Promise<BrowserTab[]> => {
     const attached = await attachTabsViaCdp({
       cdpUrl: profile.cdpUrl,
       all: opts.all === true,
       urlContains: opts.urlContains,
+      ...(opts.businessUrls !== undefined ? { businessUrls: opts.businessUrls } : {}),
     });
     const targetIds = attached.tabs.map((tab) => tab.targetId).filter(Boolean);
     const profileState = getProfileState();
