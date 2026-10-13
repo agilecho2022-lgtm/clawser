@@ -932,7 +932,9 @@ export async function ensureChromeExtensionRelayServer(opts: {
             );
           } catch (error) {
             snapshotError = String(error instanceof Error ? error.message : error);
-            if (snapshotError.includes("extension request timeout")) snapshotError = "快照超时";
+            if (snapshotError.includes("extension request timeout")) {
+              snapshotError = "快照超时";
+            }
           }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ...diagnostic, snapshot, snapshotError }));

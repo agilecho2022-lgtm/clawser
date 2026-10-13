@@ -228,15 +228,18 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
             businessUrls !== undefined &&
             (!Array.isArray(businessUrls) ||
               businessUrls.some((value) => {
-                if (typeof value !== "string") return true;
+                if (typeof value !== "string") {
+                  return true;
+                }
                 try {
                   return !["http:", "https:"].includes(new URL(value).protocol);
                 } catch {
                   return true;
                 }
               }))
-          )
+          ) {
             return jsonError(res, 400, "businessUrls must be an array of HTTP(S) URLs");
+          }
           const tabs = await profileCtx.attachTabs({
             all: (req.body as { all?: unknown })?.all === true,
             urlContains: rawUrlContains || undefined,

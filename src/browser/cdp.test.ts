@@ -79,7 +79,7 @@ describe("cdp", () => {
   });
 
   it("sends business URL configuration to the extension without changing the URL attach match", async () => {
-    let received: any;
+    let received: unknown;
     const port = await startWsServerWithMessages((msg, socket) => {
       received = msg;
       socket.send(JSON.stringify({ id: msg.id, result: { tabs: [{ targetId: "target-1" }] } }));
@@ -88,7 +88,7 @@ describe("cdp", () => {
       cdpUrl: `ws://127.0.0.1:${port}/`,
       urlContains: "tenant.test",
       businessUrls: ["https://tenant.test/qdd", "https://hr.test/ywb"],
-    } as any);
+    });
     expect(received).toMatchObject({
       method: "Clawser.attachTabs",
       params: {

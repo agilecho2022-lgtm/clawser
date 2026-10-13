@@ -21,7 +21,9 @@ function readBackgroundWorker(): ts.SourceFile {
 function nodes<T extends ts.Node>(root: ts.Node, predicate: (node: ts.Node) => node is T): T[] {
   const result: T[] = [];
   const visit = (node: ts.Node) => {
-    if (predicate(node)) result.push(node);
+    if (predicate(node)) {
+      result.push(node);
+    }
     ts.forEachChild(node, visit);
   };
   visit(root);
@@ -30,7 +32,9 @@ function nodes<T extends ts.Node>(root: ts.Node, predicate: (node: ts.Node) => n
 
 function functionBody(source: ts.SourceFile, name: string): ts.FunctionDeclaration {
   const fn = nodes(source, ts.isFunctionDeclaration).find((node) => node.name?.text === name);
-  if (!fn) throw new Error(`Missing worker function: ${name}`);
+  if (!fn) {
+    throw new Error(`Missing worker function: ${name}`);
+  }
   return fn;
 }
 
@@ -44,7 +48,9 @@ function methodGuard(source: ts.SourceFile, method: string): ts.IfStatement {
       ts.isStringLiteral(node.expression.right) &&
       node.expression.right.text === method,
   );
-  if (!guard) throw new Error(`Missing worker method: ${method}`);
+  if (!guard) {
+    throw new Error(`Missing worker method: ${method}`);
+  }
   return guard;
 }
 
@@ -52,7 +58,9 @@ function call(root: ts.Node, name: string): ts.CallExpression {
   const found = nodes(root, ts.isCallExpression).find(
     (node) => node.expression.getText().replace(/\s/g, "") === name,
   );
-  if (!found) throw new Error(`Missing worker call: ${name}`);
+  if (!found) {
+    throw new Error(`Missing worker call: ${name}`);
+  }
   return found;
 }
 
@@ -83,7 +91,9 @@ describe("chrome extension background worker", () => {
     const block = methodGuard(readBackgroundWorker(), "Clawser.attachActiveTab");
     const options = call(block, "chrome.tabs.query").arguments[0];
     expect(ts.isObjectLiteralExpression(options)).toBe(true);
-    if (!ts.isObjectLiteralExpression(options)) throw new Error("Expected tab query options");
+    if (!ts.isObjectLiteralExpression(options)) {
+      throw new Error("Expected tab query options");
+    }
     for (const name of ["active", "currentWindow"]) {
       const prop = options.properties.find(
         (property) =>
@@ -108,7 +118,9 @@ describe("chrome extension background worker", () => {
     const block = methodGuard(source, "Clawser.attachTabs");
     const options = call(block, "chrome.tabs.query").arguments[0];
     expect(ts.isObjectLiteralExpression(options)).toBe(true);
-    if (!ts.isObjectLiteralExpression(options)) throw new Error("Expected tab query options");
+    if (!ts.isObjectLiteralExpression(options)) {
+      throw new Error("Expected tab query options");
+    }
     expect(options.properties).toHaveLength(0);
     expect(nodes(block, ts.isIdentifier).some((node) => node.text === "urlContains")).toBe(true);
     expectAwaited(block, "attachTabForRelay");

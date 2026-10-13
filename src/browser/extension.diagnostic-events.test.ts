@@ -2,7 +2,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { expect, it } from "vitest";
 
-function recorder(send: (row: any) => void = () => {}) {
+function recorder(send: (row: Record<string, unknown>) => void = () => {}) {
   const source = fs.readFileSync(
     new URL("../../chrome-extension/background.js", import.meta.url),
     "utf8",
@@ -12,7 +12,7 @@ function recorder(send: (row: any) => void = () => {}) {
   expect(start, "native tab events must be recorded at event time").toBeGreaterThanOrEqual(0);
   const end = source.indexOf("\nasync function validateAttachedTab", start);
   const tabs = new Map([[7, { targetId: "old-target", sessionId: "s7" }]]),
-    events: any[] = [];
+    events: Record<string, unknown>[] = [];
   const chrome = {
     tabs: {
       get: async (id: number) => ({
@@ -33,7 +33,7 @@ function recorder(send: (row: any) => void = () => {}) {
     tabs,
     tabDiagnosticEvents: events,
     workerDiagnostic: { startedAt: 100, startSequence: 2 },
-    sendToRelay: (message: any) => send(message.params),
+    sendToRelay: (message: { params: Record<string, unknown> }) => send(message.params),
     setTimeout,
     clearTimeout,
     Date,
@@ -42,7 +42,7 @@ function recorder(send: (row: any) => void = () => {}) {
 }
 
 it("records the native discarded flag synchronously before any later snapshot or connection failure", async () => {
-  const sent: any[] = [];
+  const sent: Record<string, unknown>[] = [];
   const f = recorder((row) => sent.push(row));
   const tab = {
     id: 17,
@@ -75,8 +75,9 @@ it("retains bounded evidence when the Relay is gone without waking or changing a
   const f = recorder(() => {
     throw Error("Relay closed");
   });
-  for (let i = 0; i < 105; i++)
+  for (let i = 0; i < 105; i++) {
     await f.run("updated", { id: 7, discarded: true, windowId: 42 }, { targetId: "old-target" });
+  }
   expect(f.events.length).toBeLessThanOrEqual(100);
   expect(f.events.at(-1)).toMatchObject({ discarded: true, targetId: "old-target" });
 });
@@ -99,5 +100,5 @@ it("unavailable native window query ends within the existing two-second diagnost
   await f.run("updated", { id: 7, discarded: true, windowId: 42 });
   expect(Date.now() - start).toBeLessThan(2400);
   expect(f.events[0]).toMatchObject({ discarded: true, stage: "event" });
-  expect(f.events.at(-1).observationError).toBe("event snapshot timeout");
+  expect(f.events.at(-1)?.observationError).toBe("event snapshot timeout");
 });

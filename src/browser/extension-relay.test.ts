@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import { rawDataToString } from "../infra/ws.js";
 import { captureEnv } from "../test-utils/env.js";
 import {
   ensureChromeExtensionRelayServer,
@@ -265,7 +266,7 @@ describe("chrome extension relay server", () => {
   it("diagnostic snapshot is authenticated, read-only and includes pending commands", async () => {
     const { ext } = await startRelayWithExtension();
     ext.on("message", (raw) => {
-      const m = JSON.parse(String(raw));
+      const m = JSON.parse(rawDataToString(raw));
       if (m.method === "forwardCDPCommand" && m.params.method === "Clawser.diagnosticSnapshot") {
         ext.send(
           JSON.stringify({

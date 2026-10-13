@@ -240,7 +240,9 @@ export function registerBrowserManageCommands(
             if (
               !Array.isArray(parsed) ||
               parsed.some((value) => {
-                if (typeof value !== "string") return true;
+                if (typeof value !== "string") {
+                  return true;
+                }
                 try {
                   const url = new URL(value);
                   return !["http:", "https:"].includes(url.protocol);
@@ -248,9 +250,12 @@ export function registerBrowserManageCommands(
                   return true;
                 }
               })
-            )
+            ) {
               throw new Error("businessUrls must be an array of HTTP(S) URLs");
-            if (!opts.all && !match) throw new Error("businessUrls requires a URL match or --all");
+            }
+            if (!opts.all && !match) {
+              throw new Error("businessUrls requires a URL match or --all");
+            }
             businessUrls = parsed;
           }
           const result =
