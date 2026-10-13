@@ -117,9 +117,9 @@ export function registerBrowserExtensionCommands(
       if (!hasManifest(dir)) {
         defaultRuntime.error(
           danger(
-            [
-              `Clawser Chrome extension is not installed. Run: "clawser extension install"`,
-            ].join("\n"),
+            [`Clawser Chrome extension is not installed. Run: "clawser extension install"`].join(
+              "\n",
+            ),
           ),
         );
         defaultRuntime.exit(1);

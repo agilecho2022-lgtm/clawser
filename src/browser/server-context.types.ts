@@ -32,7 +32,11 @@ type BrowserProfileActions = {
   isHttpReachable: (timeoutMs?: number) => Promise<boolean>;
   isReachable: (timeoutMs?: number) => Promise<boolean>;
   attachActiveTab: () => Promise<BrowserTab>;
-  attachTabs: (opts: { all?: boolean; urlContains?: string; businessUrls?: string[] }) => Promise<BrowserTab[]>;
+  attachTabs: (opts: {
+    all?: boolean;
+    urlContains?: string;
+    businessUrls?: string[];
+  }) => Promise<BrowserTab[]>;
   listTabs: () => Promise<BrowserTab[]>;
   openTab: (url: string) => Promise<BrowserTab>;
   focusTab: (targetId: string) => Promise<void>;

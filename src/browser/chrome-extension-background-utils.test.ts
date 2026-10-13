@@ -28,7 +28,10 @@ async function loadBackgroundUtils(): Promise<BackgroundUtilsModule> {
       return require(modulePath) as BackgroundUtilsModule;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("Cannot find module") && !message.includes("Unexpected token 'export'")) {
+      if (
+        !message.includes("Cannot find module") &&
+        !message.includes("Unexpected token 'export'")
+      ) {
         throw error;
       }
       if (message.includes("Unexpected token 'export'")) {

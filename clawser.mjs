@@ -132,7 +132,9 @@ function profileEnvForArgs(args) {
   }
   if (!env.OPENCLAW_STATE_DIR?.trim()) {
     const suffix =
-      effectiveProfile && effectiveProfile.toLowerCase() !== "default" ? `-${effectiveProfile}` : "";
+      effectiveProfile && effectiveProfile.toLowerCase() !== "default"
+        ? `-${effectiveProfile}`
+        : "";
     env.OPENCLAW_STATE_DIR = path.join(os.homedir(), `${CLAWSER_STATE_DIRNAME}${suffix}`);
   }
   if (!env.OPENCLAW_CONFIG_PATH?.trim()) {
@@ -185,7 +187,11 @@ function ensureClawserConfig(env) {
     browser.defaultProfile = CLAWSER_DEFAULT_BROWSER_CONFIG.defaultProfile;
     changed = true;
   }
-  if (!browser.ssrfPolicy || typeof browser.ssrfPolicy !== "object" || Array.isArray(browser.ssrfPolicy)) {
+  if (
+    !browser.ssrfPolicy ||
+    typeof browser.ssrfPolicy !== "object" ||
+    Array.isArray(browser.ssrfPolicy)
+  ) {
     browser.ssrfPolicy = { ...CLAWSER_DEFAULT_BROWSER_CONFIG.ssrfPolicy };
     changed = true;
   }
@@ -318,7 +324,11 @@ async function isAnyProcessRunning(names) {
 
   if (process.platform === "win32") {
     for (const name of names) {
-      const result = await execFileQuiet("tasklist.exe", ["/FI", `IMAGENAME eq ${name}`, "/NH"], 2500);
+      const result = await execFileQuiet(
+        "tasklist.exe",
+        ["/FI", `IMAGENAME eq ${name}`, "/NH"],
+        2500,
+      );
       if (result.stdout.toLowerCase().includes(name.toLowerCase())) {
         return true;
       }
@@ -377,7 +387,13 @@ async function ensureChromeHasBlankTab() {
     return;
   }
 
-  for (const command of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"]) {
+  for (const command of [
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+    "chrome",
+  ]) {
     if (spawnDetached(command, ["about:blank"])) {
       return;
     }

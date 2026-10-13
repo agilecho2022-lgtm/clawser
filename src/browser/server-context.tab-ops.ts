@@ -37,7 +37,11 @@ type TabOpsDeps = {
 
 type ProfileTabOps = {
   attachActiveTab: () => Promise<BrowserTab>;
-  attachTabs: (opts: { all?: boolean; urlContains?: string; businessUrls?: string[] }) => Promise<BrowserTab[]>;
+  attachTabs: (opts: {
+    all?: boolean;
+    urlContains?: string;
+    businessUrls?: string[];
+  }) => Promise<BrowserTab[]>;
   listTabs: () => Promise<BrowserTab[]>;
   openTab: (url: string) => Promise<BrowserTab>;
 };

@@ -7,9 +7,9 @@ import { isRootHelpInvocation, isRootVersionInvocation } from "./cli/argv.js";
 import { applyCliProfileEnv, parseCliProfileArgs } from "./cli/profile.js";
 import { shouldSkipRespawnForArgv } from "./cli/respawn-policy.js";
 import { normalizeWindowsArgv } from "./cli/windows-argv.js";
+import { ensureClawserExecMarkerOnProcess } from "./infra/clawser-exec-env.js";
 import { isTruthyEnvValue } from "./infra/env.js";
 import { isMainModule } from "./infra/is-main.js";
-import { ensureClawserExecMarkerOnProcess } from "./infra/clawser-exec-env.js";
 import { installProcessWarningFilter } from "./infra/warning-filter.js";
 import { attachChildProcessBridge } from "./process/child-process-bridge.js";
 

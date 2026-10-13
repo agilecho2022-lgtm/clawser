@@ -1,4 +1,4 @@
-const RELAY_AUTH_TOKEN = 'CLAWSER';
+const RELAY_AUTH_TOKEN = "CLAWSER";
 
 export function reconnectDelayMs(
   attempt,

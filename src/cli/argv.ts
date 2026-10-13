@@ -294,8 +294,7 @@ export function buildParseArgv(params: {
       : baseArgv[0]?.endsWith("clawser")
         ? baseArgv.slice(1)
         : baseArgv;
-  const looksLikeNode =
-    normalizedArgv.length >= 2 && isNodeRuntime(normalizedArgv[0] ?? "");
+  const looksLikeNode = normalizedArgv.length >= 2 && isNodeRuntime(normalizedArgv[0] ?? "");
   if (looksLikeNode) {
     return normalizedArgv;
   }

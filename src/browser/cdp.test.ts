@@ -4,7 +4,13 @@ import { type WebSocket, WebSocketServer } from "ws";
 import { SsrFBlockedError } from "../infra/net/ssrf.js";
 import { rawDataToString } from "../infra/ws.js";
 import { isWebSocketUrl } from "./cdp.helpers.js";
-import { attachTabsViaCdp, createTargetViaCdp, evaluateJavaScript, normalizeCdpWsUrl, snapshotAria } from "./cdp.js";
+import {
+  attachTabsViaCdp,
+  createTargetViaCdp,
+  evaluateJavaScript,
+  normalizeCdpWsUrl,
+  snapshotAria,
+} from "./cdp.js";
 import { parseHttpUrl } from "./config.js";
 import { InvalidBrowserNavigationUrlError } from "./navigation-guard.js";
 
@@ -72,14 +78,25 @@ describe("cdp", () => {
     });
   });
 
-  it('sends business URL configuration to the extension without changing the URL attach match',async()=>{
-    let received:any;
-    const port=await startWsServerWithMessages((msg,socket)=>{
-      received=msg;socket.send(JSON.stringify({id:msg.id,result:{tabs:[{targetId:'target-1'}]}}));
+  it("sends business URL configuration to the extension without changing the URL attach match", async () => {
+    let received: any;
+    const port = await startWsServerWithMessages((msg, socket) => {
+      received = msg;
+      socket.send(JSON.stringify({ id: msg.id, result: { tabs: [{ targetId: "target-1" }] } }));
     });
-    const result=await attachTabsViaCdp({cdpUrl:`ws://127.0.0.1:${port}/`,urlContains:'tenant.test',businessUrls:['https://tenant.test/qdd','https://hr.test/ywb']} as any);
-    expect(received).toMatchObject({method:'Clawser.attachTabs',params:{urlContains:'tenant.test',businessUrls:['https://tenant.test/qdd','https://hr.test/ywb']}});
-    expect(result.tabs).toEqual([{targetId:'target-1'}]);
+    const result = await attachTabsViaCdp({
+      cdpUrl: `ws://127.0.0.1:${port}/`,
+      urlContains: "tenant.test",
+      businessUrls: ["https://tenant.test/qdd", "https://hr.test/ywb"],
+    } as any);
+    expect(received).toMatchObject({
+      method: "Clawser.attachTabs",
+      params: {
+        urlContains: "tenant.test",
+        businessUrls: ["https://tenant.test/qdd", "https://hr.test/ywb"],
+      },
+    });
+    expect(result.tabs).toEqual([{ targetId: "target-1" }]);
   });
 
   it("creates a target via the browser websocket", async () => {

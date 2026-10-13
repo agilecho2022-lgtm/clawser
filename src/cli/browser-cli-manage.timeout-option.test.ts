@@ -166,15 +166,25 @@ describe("browser manage start timeout option", () => {
     });
     expect(mocks.runtimeLog).toHaveBeenCalledWith("attached 2 tabs");
   });
-  it('passes the configured business URL set alongside the attach match',async()=>{
-    await parseBrowser(['attach','tenant.example','--business-urls-json','["https://tenant.example/qdd","https://hr.example/ywb"]']);
-    const [,req]=mocks.callBrowserRequest.mock.calls.at(-1)??[];
-    expect(req).toMatchObject({body:{action:'attach',urlContains:'tenant.example',businessUrls:['https://tenant.example/qdd','https://hr.example/ywb']}});
+  it("passes the configured business URL set alongside the attach match", async () => {
+    await parseBrowser([
+      "attach",
+      "tenant.example",
+      "--business-urls-json",
+      '["https://tenant.example/qdd","https://hr.example/ywb"]',
+    ]);
+    const [, req] = mocks.callBrowserRequest.mock.calls.at(-1) ?? [];
+    expect(req).toMatchObject({
+      body: {
+        action: "attach",
+        urlContains: "tenant.example",
+        businessUrls: ["https://tenant.example/qdd", "https://hr.example/ywb"],
+      },
+    });
   });
-  it('rejects malformed protection configuration before sending an attach request',async()=>{
-    await parseBrowser(['attach','tenant.example','--business-urls-json','["file:///private"]']);
+  it("rejects malformed protection configuration before sending an attach request", async () => {
+    await parseBrowser(["attach", "tenant.example", "--business-urls-json", '["file:///private"]']);
     expect(mocks.callBrowserRequest).not.toHaveBeenCalled();
     expect(mocks.runtimeError).toHaveBeenCalled();
   });
-
 });

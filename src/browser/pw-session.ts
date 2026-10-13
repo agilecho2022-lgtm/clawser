@@ -10,7 +10,6 @@ import type {
 import { chromium } from "playwright-core";
 import { formatErrorMessage } from "../infra/errors.js";
 import type { SsrFPolicy } from "../infra/net/ssrf.js";
-import type { AriaSnapshotNode } from "./cdp.js";
 import { withNoProxyForCdpUrl } from "./cdp-proxy-bypass.js";
 import {
   appendCdpPath,
@@ -19,6 +18,7 @@ import {
   normalizeCdpHttpBaseForJsonEndpoints,
   withCdpSocket,
 } from "./cdp.helpers.js";
+import type { AriaSnapshotNode } from "./cdp.js";
 import { normalizeCdpWsUrl } from "./cdp.js";
 import { getChromeWebSocketUrl } from "./chrome.js";
 import { BrowserTabNotFoundError } from "./errors.js";
@@ -165,7 +165,11 @@ const ACTIONABLE_ARIA_ROLES = new Set([
 ]);
 
 function isActionableAriaRole(role: string | undefined): boolean {
-  return ACTIONABLE_ARIA_ROLES.has(String(role ?? "").trim().toLowerCase());
+  return ACTIONABLE_ARIA_ROLES.has(
+    String(role ?? "")
+      .trim()
+      .toLowerCase(),
+  );
 }
 
 function resolveActionableAriaRefFromNodes(

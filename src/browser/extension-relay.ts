@@ -434,7 +434,10 @@ export async function ensureChromeExtensionRelayServer(opts: {
     >();
     let nextExtensionId = 1;
 
-    const sendToExtension = async (payload: ExtensionForwardCommandMessage, timeoutMs = 30_000): Promise<unknown> => {
+    const sendToExtension = async (
+      payload: ExtensionForwardCommandMessage,
+      timeoutMs = 30_000,
+    ): Promise<unknown> => {
       const ws = extensionWs;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         throw new Error("Chrome extension not connected");
@@ -445,11 +448,17 @@ export async function ensureChromeExtensionRelayServer(opts: {
           pendingExtension.delete(payload.id);
           reject(new Error(`extension request timeout: ${payload.params.method}`));
         }, timeoutMs);
-        pendingExtension.set(payload.id, { resolve, reject, timer,
+        pendingExtension.set(payload.id, {
+          resolve,
+          reject,
+          timer,
           method: payload.params.method,
-          targetId: typeof (payload.params.params as Record<string, unknown>)?.targetId === "string" ? (payload.params.params as { targetId: string }).targetId :
-            connectedTargets.get(payload.params.sessionId || "")?.targetId,
-          startedAt: Date.now() });
+          targetId:
+            typeof (payload.params.params as Record<string, unknown>)?.targetId === "string"
+              ? (payload.params.params as { targetId: string }).targetId
+              : connectedTargets.get(payload.params.sessionId || "")?.targetId,
+          startedAt: Date.now(),
+        });
       });
     };
 
@@ -898,24 +907,35 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
       if (path === "/extension/diagnostics" && req.method === "GET") {
         void (async () => {
-        const now = Date.now();
-        const diagnostic = {
-          connected: extensionConnected(),
-          lastPongAgoMs: lastPongAt === null ? null : Math.max(0, now - lastPongAt),
-          pendingRequests: Array.from(pendingExtension.values()).filter(p => p.method !== "Clawser.diagnosticSnapshot")
-            .map(p => ({ method: p.method, targetId: p.targetId ?? null, waitedMs: Math.max(0, now - p.startedAt) })),
-        };
-        let snapshot: unknown;
-        let snapshotError: string | undefined;
-        try {
-          snapshot = await sendToExtension({ id: nextExtensionId++, method: "forwardCDPCommand",
-            params: { method: "Clawser.diagnosticSnapshot", params: {} } }, 1900);
-        } catch (error) {
-          snapshotError = String(error instanceof Error ? error.message : error);
-          if (snapshotError.includes("extension request timeout")) snapshotError = "快照超时";
-        }
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ...diagnostic, snapshot, snapshotError }));
+          const now = Date.now();
+          const diagnostic = {
+            connected: extensionConnected(),
+            lastPongAgoMs: lastPongAt === null ? null : Math.max(0, now - lastPongAt),
+            pendingRequests: Array.from(pendingExtension.values())
+              .filter((p) => p.method !== "Clawser.diagnosticSnapshot")
+              .map((p) => ({
+                method: p.method,
+                targetId: p.targetId ?? null,
+                waitedMs: Math.max(0, now - p.startedAt),
+              })),
+          };
+          let snapshot: unknown;
+          let snapshotError: string | undefined;
+          try {
+            snapshot = await sendToExtension(
+              {
+                id: nextExtensionId++,
+                method: "forwardCDPCommand",
+                params: { method: "Clawser.diagnosticSnapshot", params: {} },
+              },
+              1900,
+            );
+          } catch (error) {
+            snapshotError = String(error instanceof Error ? error.message : error);
+            if (snapshotError.includes("extension request timeout")) snapshotError = "快照超时";
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ...diagnostic, snapshot, snapshotError }));
         })();
         return;
       }

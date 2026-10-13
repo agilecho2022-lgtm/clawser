@@ -219,47 +219,62 @@ export function registerBrowserManageCommands(
     .argument("[urlContains]", "Attach tabs whose URL contains this text")
     .option("--all", "Attach all ordinary Chrome tabs", false)
     .option("--business-urls-json <json>", "Configured business URL set for discard protection")
-    .action(async (urlContains: string | undefined, opts: { all?: boolean; businessUrlsJson?: string }, cmd) => {
-      const parent = parentOpts(cmd);
-      const profile = parent?.browserProfile;
-      const match = urlContains?.trim();
-      if (opts.all && match) {
-        defaultRuntime.error(danger("attach accepts either --all or a URL match, not both"));
-        defaultRuntime.exit(1);
-        return;
-      }
-      await runBrowserCommand(async () => {
-        let businessUrls: string[] | undefined;
-        if (opts.businessUrlsJson !== undefined) {
-          const parsed: unknown = JSON.parse(opts.businessUrlsJson);
-          if (!Array.isArray(parsed) || parsed.some(value => {
-            if (typeof value !== 'string') return true;
-            try { const url = new URL(value); return !['http:', 'https:'].includes(url.protocol); } catch { return true; }
-          })) throw new Error('businessUrls must be an array of HTTP(S) URLs');
-          if (!opts.all && !match) throw new Error('businessUrls requires a URL match or --all');
-          businessUrls = parsed;
+    .action(
+      async (
+        urlContains: string | undefined,
+        opts: { all?: boolean; businessUrlsJson?: string },
+        cmd,
+      ) => {
+        const parent = parentOpts(cmd);
+        const profile = parent?.browserProfile;
+        const match = urlContains?.trim();
+        if (opts.all && match) {
+          defaultRuntime.error(danger("attach accepts either --all or a URL match, not both"));
+          defaultRuntime.exit(1);
+          return;
         }
-        const result =
-          opts.all || match
-            ? await callTabAction(parent, profile, {
-                action: "attach",
-                all: opts.all === true,
-                urlContains: match || undefined,
-                ...(businessUrls !== undefined ? { businessUrls } : {}),
+        await runBrowserCommand(async () => {
+          let businessUrls: string[] | undefined;
+          if (opts.businessUrlsJson !== undefined) {
+            const parsed: unknown = JSON.parse(opts.businessUrlsJson);
+            if (
+              !Array.isArray(parsed) ||
+              parsed.some((value) => {
+                if (typeof value !== "string") return true;
+                try {
+                  const url = new URL(value);
+                  return !["http:", "https:"].includes(url.protocol);
+                } catch {
+                  return true;
+                }
               })
-            : await callTabAction(parent, profile, { action: "attach-active" });
-        if (printJsonResult(parent, result)) {
-          return;
-        }
-        if (opts.all || match) {
-          const tabs = (result as { tabs?: BrowserTab[] })?.tabs ?? [];
-          defaultRuntime.log(describeAttachedTabs(tabs.length));
-          return;
-        }
-        const tab = (result as { tab?: BrowserTab })?.tab;
-        defaultRuntime.log(`attached active tab: ${tab?.url || tab?.targetId || "(unknown)"}`);
-      });
-    });
+            )
+              throw new Error("businessUrls must be an array of HTTP(S) URLs");
+            if (!opts.all && !match) throw new Error("businessUrls requires a URL match or --all");
+            businessUrls = parsed;
+          }
+          const result =
+            opts.all || match
+              ? await callTabAction(parent, profile, {
+                  action: "attach",
+                  all: opts.all === true,
+                  urlContains: match || undefined,
+                  ...(businessUrls !== undefined ? { businessUrls } : {}),
+                })
+              : await callTabAction(parent, profile, { action: "attach-active" });
+          if (printJsonResult(parent, result)) {
+            return;
+          }
+          if (opts.all || match) {
+            const tabs = (result as { tabs?: BrowserTab[] })?.tabs ?? [];
+            defaultRuntime.log(describeAttachedTabs(tabs.length));
+            return;
+          }
+          const tab = (result as { tab?: BrowserTab })?.tab;
+          defaultRuntime.log(`attached active tab: ${tab?.url || tab?.targetId || "(unknown)"}`);
+        });
+      },
+    );
 
   const tab = browser
     .command("tab")

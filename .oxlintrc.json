@@ -22,11 +22,5 @@
     "unicorn/consistent-function-scoping": "off",
     "unicorn/require-post-message-target-origin": "off"
   },
-  "ignorePatterns": [
-    "assets/",
-    "dist/",
-    "node_modules/",
-    "patches/",
-    "pnpm-lock.yaml"
-  ]
+  "ignorePatterns": ["assets/", "dist/", "node_modules/", "patches/", "pnpm-lock.yaml"]
 }

@@ -15,10 +15,7 @@ function configureBrowserOnlyRoot(program: Command, programVersion: string) {
       "--dev",
       "Dev profile: isolate state under ~/.clawser-dev, default gateway port 19001, and shift derived browser ports",
     )
-    .option(
-      "--profile <name>",
-      "Use a named profile (isolates state under ~/.clawser-<name>)",
-    )
+    .option("--profile <name>", "Use a named profile (isolates state under ~/.clawser-<name>)")
     .option(
       "--log-level <level>",
       `Global log level override for file + console (${CLI_LOG_LEVEL_VALUES})`,

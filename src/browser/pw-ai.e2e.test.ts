@@ -68,7 +68,8 @@ beforeAll(async () => {
   chromiumMock = pw.chromium;
   ({ snapshotAiViaPlaywright } = await import("./pw-tools-core.snapshot.js"));
   ({ clickViaPlaywright } = await import("./pw-tools-core.interactions.js"));
-  ({ closePlaywrightBrowserConnection, rememberAriaRefsForTarget } = await import("./pw-session.js"));
+  ({ closePlaywrightBrowserConnection, rememberAriaRefsForTarget } =
+    await import("./pw-session.js"));
 });
 
 afterEach(async () => {

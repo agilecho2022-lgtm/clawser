@@ -264,29 +264,52 @@ describe("chrome extension relay server", () => {
 
   it("diagnostic snapshot is authenticated, read-only and includes pending commands", async () => {
     const { ext } = await startRelayWithExtension();
-    ext.on("message", raw => {
-      const m=JSON.parse(String(raw));
-      if(m.method==="forwardCDPCommand" && m.params.method==="Clawser.diagnosticSnapshot") {
-        ext.send(JSON.stringify({id:m.id,result:{tabs:[{tabId:7,discarded:true,state:"minimized",attached:false}]}}));
+    ext.on("message", (raw) => {
+      const m = JSON.parse(String(raw));
+      if (m.method === "forwardCDPCommand" && m.params.method === "Clawser.diagnosticSnapshot") {
+        ext.send(
+          JSON.stringify({
+            id: m.id,
+            result: { tabs: [{ tabId: 7, discarded: true, state: "minimized", attached: false }] },
+          }),
+        );
       }
     });
     try {
       expect((await fetch(`${cdpUrl}/extension/diagnostics`)).status).toBe(401);
-      const response=await fetch(`${cdpUrl}/extension/diagnostics`,{headers:relayAuthHeaders(cdpUrl)});
+      const response = await fetch(`${cdpUrl}/extension/diagnostics`, {
+        headers: relayAuthHeaders(cdpUrl),
+      });
       expect(response.status).toBe(200);
-      const body=await response.json();
+      const body = await response.json();
       expect(body.connected).toBe(true);
       expect(body.pendingRequests).toEqual([]);
-      expect(body.snapshot.tabs).toEqual([{tabId:7,discarded:true,state:"minimized",attached:false}]);
-      const cdp=new WebSocket(cdpUrl.replace('http:','ws:')+'/cdp',{headers:relayAuthHeaders(cdpUrl)});
+      expect(body.snapshot.tabs).toEqual([
+        { tabId: 7, discarded: true, state: "minimized", attached: false },
+      ]);
+      const cdp = new WebSocket(cdpUrl.replace("http:", "ws:") + "/cdp", {
+        headers: relayAuthHeaders(cdpUrl),
+      });
       await waitForOpen(cdp);
-      cdp.send(JSON.stringify({id:99,method:'Target.createTarget',params:{url:'about:blank'}}));
-      const pending=await waitForListMatch(async()=> (await fetch(`${cdpUrl}/extension/diagnostics`,{headers:relayAuthHeaders(cdpUrl)})).json(),
-        value=>value.pendingRequests.some((r: {method:string})=>r.method==='Target.createTarget'));
-      expect(pending.pendingRequests.find((r:{method:string})=>r.method==='Target.createTarget')).toMatchObject({targetId:null});
+      cdp.send(
+        JSON.stringify({ id: 99, method: "Target.createTarget", params: { url: "about:blank" } }),
+      );
+      const pending = await waitForListMatch(
+        async () =>
+          (
+            await fetch(`${cdpUrl}/extension/diagnostics`, { headers: relayAuthHeaders(cdpUrl) })
+          ).json(),
+        (value) =>
+          value.pendingRequests.some((r: { method: string }) => r.method === "Target.createTarget"),
+      );
+      expect(
+        pending.pendingRequests.find((r: { method: string }) => r.method === "Target.createTarget"),
+      ).toMatchObject({ targetId: null });
       expect(pending.pendingRequests[0].waitedMs).toBeGreaterThanOrEqual(0);
       cdp.close();
-    } finally {ext.close();}
+    } finally {
+      ext.close();
+    }
   });
 
   it("reports pong age without disconnecting a stale but open socket and resets it on reconnect", async () => {

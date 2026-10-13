@@ -36,7 +36,10 @@ async function loadOptionsValidation(): Promise<OptionsValidationModule> {
       return require(modulePath) as OptionsValidationModule;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("Cannot find module") && !message.includes("Unexpected token 'export'")) {
+      if (
+        !message.includes("Cannot find module") &&
+        !message.includes("Unexpected token 'export'")
+      ) {
         throw error;
       }
       if (message.includes("Unexpected token 'export'")) {

@@ -124,9 +124,7 @@ function resolveLocalGatewayCredentials(params: {
   });
   const localPasswordCanWin =
     params.plan.authMode === "password" ||
-    (params.plan.authMode !== "token" &&
-      params.plan.authMode !== "none" &&
-      !localResolved.token);
+    (params.plan.authMode !== "token" && params.plan.authMode !== "none" && !localResolved.token);
   const localTokenCanWin =
     params.plan.authMode === "token" ||
     (params.plan.authMode !== "password" &&

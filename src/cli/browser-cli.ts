@@ -34,9 +34,7 @@ export function registerBrowserCli(program: Command) {
     )
     .action(() => {
       browser.outputHelp();
-      defaultRuntime.error(
-        danger(`Missing subcommand. Try: "clawser status"`),
-      );
+      defaultRuntime.error(danger(`Missing subcommand. Try: "clawser status"`));
       defaultRuntime.exit(1);
     });
 
