@@ -60,9 +60,31 @@ function protectionOperation(operation) {
 async function saveProtectionRecords() {
   await chrome.storage.local.set({ businessTabProtectionRecords })
 }
+function recordProtectionRestoreSkipped(record, tab, reason, error) {
+  // A stale record is not proof of the current target identity. Keep the
+  // expected identity separate from the unverified live target.
+  void recordTabDiagnostic('protection_restore_skipped', tab, {
+    targetId: null, identitySource: 'unverified_protection_record', reason,
+    expectedTargetId: record.targetId ?? null, expectedWindowId: record.windowId ?? null,
+    ...(error ? { error: String(error) } : {}),
+  }, { originOnly: !tabs.has(tab.id) && !isBusinessTabUrl(tab.url) })
+}
 async function protectionIdentityMatches(record, tab) {
-  if (!record.targetId || record.windowId !== tab.windowId) return false
-  const matches = (await chrome.debugger.getTargets()).filter(target => target.tabId === tab.id && target.id === record.targetId)
+  if (!record.targetId || record.windowId !== tab.windowId) {
+    recordProtectionRestoreSkipped(record, tab, record.targetId ? 'window_mismatch' : 'record_target_missing')
+    return false
+  }
+  let targets
+  try {
+    targets = await chrome.debugger.getTargets()
+  } catch (error) {
+    recordProtectionRestoreSkipped(record, tab, 'target_query_failed', error)
+    throw error
+  }
+  const matches = targets.filter(target => target.tabId === tab.id && target.id === record.targetId)
+  if (matches.length !== 1) {
+    recordProtectionRestoreSkipped(record, tab, targets.some(target => target.tabId === tab.id) ? 'target_mismatch' : 'target_missing')
+  }
   return matches.length === 1
 }
 async function releaseProtection(tabId, restore = true) {

@@ -11,7 +11,7 @@ const cleanup: Array<() => void> = [];
 afterEach(() => { for (const dispose of cleanup.splice(0)) dispose(); });
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
-async function worker(options: { saved?: any; existingProtection?: boolean; originalFalse?: boolean; discarded?: boolean; frozen?: boolean; attachFails?: boolean; targetInfoFails?: boolean; commandGate?: Promise<any>; attachGate?: Promise<void>; relaySendFails?: boolean; persistGate?: Promise<void>; commandMethod?: string; targetInfoGate?: Promise<void>; nativeTargetId?: string; extraNativeTarget?: boolean } = {}) {
+async function worker(options: { saved?: any; existingProtection?: boolean; originalFalse?: boolean; discarded?: boolean; frozen?: boolean; attachFails?: boolean; attachError?: Error; targetInfoFails?: boolean; commandGate?: Promise<any>; attachGate?: Promise<void>; attachGates?: Map<number, Promise<void>>; relaySendFails?: boolean; persistGate?: Promise<void>; commandMethod?: string; targetInfoGate?: Promise<void>; nativeTargetId?: string; extraNativeTarget?: boolean; nativeTargetMissing?: boolean; targetQueryFails?: boolean; removeError?: Error } = {}) {
   const inventory = new Map<number, any>([
     [7, { id: 7, url: 'https://qdd.test/home', discarded: options.discarded || false,
       frozen: options.frozen || false, autoDiscardable: options.originalFalse ? false : !options.existingProtection,
@@ -30,6 +30,10 @@ async function worker(options: { saved?: any; existingProtection?: boolean; orig
   const writes: Array<{ tabId: number; values: any }> = [];
   const attached = new Set<number>(options.existingProtection && saved.session.persistedTabs?.length ? [7] : []);
   const sent: any[] = [];
+  const nativeAttachCalls: number[] = [];
+  const removeCalls: number[] = [];
+  const warnings: unknown[][] = [];
+  let nextCreatedId = 9;
   const event = (name: string) => ({ addListener(fn: any) { hooks.set(name, [...(hooks.get(name) || []), fn]); } });
   const notify = async (name: string, ...args: any[]) => {
     for (const fn of hooks.get(name) || []) fn(...args);
@@ -46,15 +50,15 @@ async function worker(options: { saved?: any; existingProtection?: boolean; orig
     tabs: {
       get: async (id: number) => { if (!inventory.has(id)) throw new Error('No tab'); return structuredClone(inventory.get(id)); },
       query: async (query: any) => [...inventory.values()].filter(t => !query.active || t.active).map(t => structuredClone(t)),
-      create: async ({ url }: any) => { const tab = { id: 9, url, windowId: 42, autoDiscardable: true, discarded: false }; inventory.set(9, tab); return structuredClone(tab); },
+      create: async ({ url }: any) => { const id = nextCreatedId++; const tab = { id, url, windowId: 42, autoDiscardable: true, discarded: false }; inventory.set(id, tab); return structuredClone(tab); },
       update: async (id: number, values: any) => { const tab = inventory.get(id); if (!tab) throw new Error('No tab'); writes.push({ tabId: id, values: structuredClone(values) }); Object.assign(tab, values); return structuredClone(tab); },
-      remove: async (id: number) => { inventory.delete(id); attached.delete(id); await notify('removed', id); },
+      remove: async (id: number) => { removeCalls.push(id); if (options.removeError) throw options.removeError; inventory.delete(id); attached.delete(id); await notify('removed', id); },
       onCreated: event('created'), onRemoved: event('removed'), onReplaced: event('replaced'),
       onActivated: event('activated'), onUpdated: event('updated'),
     },
     windows: { get: async () => ({ id: 42, state: 'normal', focused: true }), update: async () => {} },
     debugger: {
-      attach: async ({ tabId }: any) => { if (options.attachFails) throw new Error('native attach failed'); await options.attachGate; attached.add(tabId); },
+      attach: async ({ tabId }: any) => { nativeAttachCalls.push(tabId); if (options.attachError) throw options.attachError; if (options.attachFails) throw new Error('native attach failed'); await (options.attachGates?.get(tabId) || options.attachGate); attached.add(tabId); },
       detach: async ({ tabId }: any) => { attached.delete(tabId); },
       sendCommand: async ({ tabId }: any, method: string) => {
         if(method==='Target.getTargetInfo') {
@@ -65,7 +69,7 @@ async function worker(options: { saved?: any; existingProtection?: boolean; orig
         if(method===(options.commandMethod || 'Runtime.evaluate') && options.commandGate) return options.commandGate;
         return {result:{value:1}};
       },
-      getTargets: async () => [...inventory.values()].filter(tab=>!tab.discarded).flatMap(tab=>[{tabId:tab.id,id:options.nativeTargetId || `target-${tab.id}`,attached:attached.has(tab.id)},...(options.extraNativeTarget ? [{tabId:tab.id,id:`worker-${tab.id}`,attached:false}] : [])]),
+      getTargets: async () => { if (options.targetQueryFails) throw new Error('native target query failed'); return [...inventory.values()].filter(tab=>!tab.discarded && !(tab.id===7 && options.nativeTargetMissing)).flatMap(tab=>[{tabId:tab.id,id:options.nativeTargetId || `target-${tab.id}`,attached:attached.has(tab.id)},...(options.extraNativeTarget ? [{tabId:tab.id,id:`worker-${tab.id}`,attached:false}] : [])]); },
       onEvent: event('debuggerEvent'), onDetach: event('detach'),
     },
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setBadgeTextColor: async () => {}, setTitle: async () => {}, onClicked: event('clicked') },
@@ -75,8 +79,8 @@ async function worker(options: { saved?: any; existingProtection?: boolean; orig
   };
   const source = fs.readFileSync(new URL('../../chrome-extension/background.js', import.meta.url), 'utf8')
     .replace(/^import[\s\S]*?from ['"][^'"]+['"]\s*;?/gm, '');
-  const api = vm.runInNewContext(source + '\n;({ attachTabForRelay, detachTab, handleForwardCdpCommand, onRelayMessage, reannounceAttachedTabs, tabs, ready: initPromise, setRelay: () => { relayWs = { readyState: 1, send(value) { if (relaySendFails) throw new Error("relay send failed"); sent.push(JSON.parse(value)); } } } })', {
-    ...utils, recordWorkerStart, chrome, sent, relaySendFails: options.relaySendFails, URL, structuredClone, console: { log() {}, warn() {} },
+  const api = vm.runInNewContext(source + '\n;({ attachTabForRelay, detachTab, handleForwardCdpCommand, onRelayMessage, reannounceAttachedTabs, tabs, ownedCreates, ready: initPromise, setRelay: () => { relayWs = { readyState: 1, send(value) { if (relaySendFails) throw new Error("relay send failed"); sent.push(JSON.parse(value)); } } } })', {
+    ...utils, recordWorkerStart, chrome, sent, relaySendFails: options.relaySendFails, URL, structuredClone, console: { log() {}, warn(...args: unknown[]) { warnings.push(args); } },
     WebSocket: { OPEN: 1 }, fetch: async () => { throw new Error('isolated relay offline'); },
     setTimeout: (fn: any, ms: number) => { const timer = setTimeout(fn, ms); timers.add(timer); return timer; },
     clearTimeout: (timer: any) => { clearTimeout(timer); timers.delete(timer); },
@@ -85,7 +89,7 @@ async function worker(options: { saved?: any; existingProtection?: boolean; orig
   await api.ready;
   await flush();
   api.setRelay();
-  return { api, inventory, saved, writes, notify, attached, sent, controls: options };
+  return { api, inventory, saved, writes, notify, attached, sent, nativeAttachCalls, removeCalls, warnings, controls: options };
 }
 
 it('rejects a discarded business tab before attaching it', async () => {
@@ -230,14 +234,20 @@ it('refuses stale ownership for a reused tabId with another native target',async
  expect(f.inventory.get(7).autoDiscardable).toBe(false);
  expect(f.saved.local.businessTabProtectionRecords?.['7']).toBeUndefined();
 });
-it('relinquishes restoration ownership when the user changes the flag',async()=>{
+it('G5 never writes the flag back during the users true then false changes',async()=>{
  const f=await worker();await f.api.attachTabForRelay(f.inventory.get(7));
+ expect(f.writes).toEqual([{tabId:7,values:{autoDiscardable:false}}]);
  f.inventory.get(7).autoDiscardable=true;
  await f.notify('updated',7,{autoDiscardable:true},f.inventory.get(7));
+ expect(f.writes).toEqual([{tabId:7,values:{autoDiscardable:false}}]);
+ expect(f.inventory.get(7).autoDiscardable).toBe(true);
+ expect(f.saved.local.businessTabProtectionRecords?.['7']).toBeUndefined();
  f.inventory.get(7).autoDiscardable=false;
  await f.notify('updated',7,{autoDiscardable:false},f.inventory.get(7));
+ expect(f.writes).toEqual([{tabId:7,values:{autoDiscardable:false}}]);
  await f.api.detachTab(7,'canceled_by_user');
  expect(f.inventory.get(7).autoDiscardable).toBe(false);
+ expect(f.writes).toEqual([{tabId:7,values:{autoDiscardable:false}}]);
 });
 it('rolls back the debugger acquired from a user tab on target-info failure without closing it',async()=>{
  const f=await worker({targetInfoFails:true});
@@ -270,7 +280,7 @@ it('rejects a command response that finishes after the target was discarded',asy
  await f.notify('updated',7,{discarded:true},f.inventory.get(7));resolve({result:{value:'stale'}});await rejected;
 });
 
-it('never starts a second native debugger attach for concurrent requests on the same tab',async()=>{
+it('G3 issues exactly one native debugger attach for concurrent requests on the same tab',async()=>{
  let resolve!:()=>void;const gate=new Promise<void>(r=>{resolve=r});
  const f=await worker({attachGate:gate});
  const first=f.api.attachTabForRelay(f.inventory.get(7));const second=f.api.attachTabForRelay(f.inventory.get(7));
@@ -278,14 +288,21 @@ it('never starts a second native debugger attach for concurrent requests on the 
  const results=await Promise.all([first,second]);
  expect(results[0].targetId).toBe('target-7');expect(results[1].targetId).toBe('target-7');
  expect(f.sent.filter(m=>m.params?.method==='Target.attachedToTarget')).toHaveLength(1);
+ expect(f.nativeAttachCalls).toEqual([7]);
 });
-it('rejects a command response from before native debugger detach even after reattachment',async()=>{
+it('G2 rejects an old response and accepts a fresh command after explicit reattachment',async()=>{
  let resolve!:(v:any)=>void;const gate=new Promise<any>(r=>{resolve=r});
  const f=await worker({commandGate:gate});await f.api.attachTabForRelay(f.inventory.get(7));
  const operation=f.api.handleForwardCdpCommand({params:{method:'Runtime.evaluate',params:{targetId:'target-7'}}});
  const rejected=expect(operation).rejects.toThrow(/BROWSER_TAB_MISSING/);
  await flush();await f.notify('detach',{tabId:7},'target_closed');
+ const oldSession=f.sent.find(m=>m.params?.method==='Target.attachedToTarget').params.params.sessionId;
  resolve({result:{value:'old'}});await rejected;
+ await f.api.attachTabForRelay(f.inventory.get(7));
+ expect(f.api.tabs.get(7).sessionId).not.toBe(oldSession);
+ expect(f.nativeAttachCalls).toEqual([7,7]);
+ f.controls.commandGate=Promise.resolve({result:{value:'fresh'}});
+ await expect(f.api.handleForwardCdpCommand({params:{method:'Runtime.evaluate',params:{targetId:'target-7'}}})).resolves.toEqual({result:{value:'fresh'}});
 });
 
 it('uses the product supplied business configuration and persists it for worker restart',async()=>{
@@ -376,4 +393,117 @@ it('restores owned protection using its exact native target when the tab has ano
  const f=await worker({existingProtection:true,extraNativeTarget:true});
  await f.api.detachTab(7,'canceled_by_user');
  expect(f.inventory.get(7).autoDiscardable).toBe(true);
+});
+
+async function until(predicate: () => boolean) {
+  const deadline = Date.now() + 1000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('fixture did not reach native boundary');
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+}
+
+it('G1 leaves the original flag untouched while native attach is pending', async () => {
+  let resolve!: () => void;
+  const gate = new Promise<void>(r => { resolve = r; });
+  const f = await worker({ attachGate: gate });
+  const operation = f.api.attachTabForRelay(f.inventory.get(7));
+  await until(() => f.nativeAttachCalls.length === 1);
+  expect(f.inventory.get(7).autoDiscardable).toBe(true);
+  expect(f.writes).toEqual([]);
+  resolve();
+  await operation;
+  expect(f.writes).toEqual([{ tabId: 7, values: { autoDiscardable: false } }]);
+});
+
+it('G1 leaves the original flag untouched when native attach fails', async () => {
+  const error = new TypeError('native attach rejected');
+  const f = await worker({ attachError: error });
+  await expect(f.api.attachTabForRelay(f.inventory.get(7))).rejects.toBe(error);
+  expect(f.inventory.get(7).autoDiscardable).toBe(true);
+  expect(f.writes).toEqual([]);
+});
+
+it('G1 does not protect before native target identity validation completes', async () => {
+  let resolve!: () => void;
+  const gate = new Promise<void>(r => { resolve = r; });
+  const f = await worker({ targetInfoGate: gate });
+  const operation = f.api.attachTabForRelay(f.inventory.get(7));
+  await until(() => f.attached.has(7));
+  expect(f.inventory.get(7).autoDiscardable).toBe(true);
+  expect(f.writes).toEqual([]);
+  resolve();
+  await operation;
+  expect(f.inventory.get(7).autoDiscardable).toBe(false);
+});
+
+it('G1 does not write protection after native target identity validation fails', async () => {
+  const f = await worker({ targetInfoFails: true });
+  await expect(f.api.attachTabForRelay(f.inventory.get(7))).rejects.toThrow('target info unavailable');
+  expect(f.inventory.get(7).autoDiscardable).toBe(true);
+  expect(f.writes).toEqual([]);
+  expect(f.attached.has(7)).toBe(false);
+});
+
+it.each([
+  { name: 'window mismatch', recordWindow: 43, nativeTargetMissing: false, targetQueryFails: false, reason: 'window_mismatch' },
+  { name: 'missing native target', recordWindow: 42, nativeTargetMissing: true, targetQueryFails: false, reason: 'target_missing' },
+  { name: 'native target query failure', recordWindow: 42, nativeTargetMissing: false, targetQueryFails: true, reason: 'target_query_failed' },
+])('G4 skips stale restoration with diagnostic evidence for $name', async test => {
+  const saved = { local: { businessTabProtectionUrls: ['https://qdd.test/'], businessTabProtectionRecords: {
+    7: { tabId: 7, targetId: 'target-7', windowId: test.recordWindow, url: 'https://qdd.test/home', originalAutoDiscardable: true },
+  } }, session: {} };
+  const f = await worker({ saved, originalFalse: true, nativeTargetMissing: test.nativeTargetMissing, targetQueryFails: test.targetQueryFails });
+  await f.api.detachTab(7, 'canceled_by_user');
+  expect(f.inventory.get(7).autoDiscardable).toBe(false);
+  expect(f.inventory.get(8).autoDiscardable).toBe(true);
+  expect(f.writes).toEqual([]);
+  expect(f.saved.local.businessTabProtectionRecords?.['7']).toBeUndefined();
+  expect(f.sent.some(message => message.method === 'tabDiagnostic' && message.params.event === 'protection_restore_skipped' && message.params.reason === test.reason && message.params.tabId === 7)).toBe(true);
+});
+
+it('G6 skips page removal and logs when creation ownership proof is lost', async () => {
+  let reject!: (error: Error) => void;
+  const gate = new Promise<void>((_, r) => { reject = r; });
+  const f = await worker({ attachGate: gate });
+  const error = new TypeError('late native attach rejection');
+  const operation = f.api.handleForwardCdpCommand({ params: { method: 'Target.createTarget', params: { url: 'https://qdd.test/home' } } });
+  const rejected = expect(operation).rejects.toBe(error);
+  await until(() => f.nativeAttachCalls.includes(9));
+  // Fault injection into the ownership registry only, without changing the page.
+  f.api.ownedCreates.delete(9);
+  reject(error);
+  await rejected;
+  expect(f.inventory.has(9)).toBe(true);
+  expect(f.removeCalls).toEqual([]);
+  expect(f.warnings).toContainEqual(['create rollback skipped: tab identity changed', 9]);
+});
+
+it('G6 preserves the original create error and logs a rejected page removal', async () => {
+  const original = new TypeError('native attachment rejected');
+  const removeError = new Error('permission denied by browser');
+  const f = await worker({ attachError: original, removeError });
+  await expect(f.api.handleForwardCdpCommand({ params: { method: 'Target.createTarget', params: { url: 'https://qdd.test/home' } } })).rejects.toBe(original);
+  expect(f.removeCalls).toEqual([9]);
+  expect(f.inventory.has(9)).toBe(true);
+  expect(f.warnings).toContainEqual(['create rollback failed', 9, String(removeError)]);
+});
+
+it('G6 late rollback removes only its old page while a distinct retry page stays usable', async () => {
+  let reject!: (error: Error) => void;
+  const gate = new Promise<void>((_, r) => { reject = r; });
+  const f = await worker({ attachGates: new Map([[9, gate]]) });
+  const error = new Error('first create failed late');
+  const first = f.api.handleForwardCdpCommand({ params: { method: 'Target.createTarget', params: { url: 'https://qdd.test/home?attempt=1' } } });
+  const rejected = expect(first).rejects.toBe(error);
+  await until(() => f.nativeAttachCalls.includes(9));
+  await expect(f.api.handleForwardCdpCommand({ params: { method: 'Target.createTarget', params: { url: 'https://qdd.test/home?attempt=2' } } })).resolves.toMatchObject({ targetId: 'target-10' });
+  expect([...f.inventory.keys()]).toEqual([7, 8, 9, 10]);
+  reject(error);
+  await rejected;
+  expect(f.removeCalls).toEqual([9]);
+  expect([...f.inventory.keys()]).toEqual([7, 8, 10]);
+  expect(f.api.tabs.get(10)?.targetId).toBe('target-10');
+  expect(f.inventory.get(10).autoDiscardable).toBe(false);
+  await expect(f.api.handleForwardCdpCommand({ params: { method: 'Runtime.evaluate', params: { targetId: 'target-10' } } })).resolves.toEqual({ result: { value: 1 } });
 });
