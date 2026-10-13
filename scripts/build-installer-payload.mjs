@@ -44,7 +44,7 @@ function writeInstallNote() {
     "3. Enable Developer mode.",
     "4. Choose Load unpacked and select the chrome-extension folder in this directory.",
     "5. On the Clawser Browser Relay options page, keep port 18792 and click Save.",
-    "6. Use the tray/menu bar action: click Start Clawser if shown, or leave it running if Stop Clawser is shown.",
+    "6. Run clawser start to start the local relay.",
     "7. Click the extension icon on the tab you want to control.",
     "",
   ].join("\n");
@@ -68,23 +68,9 @@ copyRequired("installer/chrome-extension-install.html", "chrome-extension-instal
 copyOptional("README.md");
 copyOptional("README_ZH.md");
 copyOptional("LICENSE");
-copyOptional("dist-tray", "tray");
 writeInstallNote();
 
 run("pnpm", ["install", "--prod", "--frozen-lockfile"], { cwd: outDir });
 run(process.execPath, [path.join(root, "scripts", "verify-portable-node-modules.mjs"), outDir]);
-
-if (process.platform === "darwin" && process.env.CLAWSER_SKIP_MACOS_APP !== "1") {
-  run(
-    "bash",
-    [
-      path.join(root, "tray", "scripts", "build-macos-app.sh"),
-      path.join(outDir, "Clawser Tray.app"),
-    ],
-    {
-      env: { ...process.env, CLAWSER_TRAY_EMBED_DEV_ROOT: "0" },
-    },
-  );
-}
 
 console.log(outDir);

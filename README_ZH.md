@@ -6,8 +6,6 @@ Clawser 是一个本地 Chrome 自动化 CLI。它会启动本地 relay，通过
 **Clawser Browser Relay** Chrome 扩展连接 Chrome，并把浏览器操作暴露成
 适合脚本调用的命令。
 
-本仓库还包含一个轻量的 Go 菜单栏/任务栏常驻程序，用来启动和停止本地 relay。
-
 English documentation: [README.md](README.md)
 
 ## 当前已有功能
@@ -20,21 +18,19 @@ English documentation: [README.md](README.md)
 - 查看 tabs、snapshot、console、errors、requests、cookies、storage。
 - 通过 snapshot ref 操作页面：click、type、press、hover、drag、select、
   upload、wait、evaluate、screenshot、download、dialog、trace。
-- 支持 CLI 方式，也支持仓库内置的 macOS 菜单栏程序。
+- 支持 CLI 方式。
 - 支持 `--json` 输出，方便 Node.js/RPA 脚本调用。
 
 当前有意保留的边界：
 
 - `clawser stop` 只停止 relay，不会关闭 Chrome，避免误关用户浏览器。
 - tab 可以通过 `clawser attach` 命令连接（无需点击扩展），也可以点击固定扩展图标连接；连接成功后徽标显示 `ON`。
-- 菜单栏程序目前是本地开发版 `.app`，还不是签名安装包。
 
 ## 环境要求
 
 - Node.js `22.12+`
 - pnpm
 - Google Chrome
-- 如果要构建菜单栏程序，需要 Go `1.24+`
 
 ## 快速安装
 
@@ -183,35 +179,6 @@ clawser stop
 ```bash
 CLAWSER_SKIP_CHROME_BOOTSTRAP=1 clawser start
 ```
-
-## 菜单栏 / 任务栏常驻程序
-
-仓库内置了一个 Go 写的轻量菜单栏程序，位于 `tray/`。
-
-当前菜单包含：
-
-- 根据 relay 状态显示 `Start Clawser` 或 `Stop Clawser`
-- relay 状态
-- `Quit`
-
-构建并运行本地 macOS `.app`：
-
-```bash
-cd tray
-./scripts/build-macos-app.sh
-open -n "/tmp/Clawser Tray.app"
-```
-
-本地 `.app` 会生成到 `/tmp`，避免把构建产物写进仓库。
-
-菜单栏程序查找 Clawser 的顺序：
-
-1. `CLAWSER_BIN`
-2. 最近的、包含 `clawser.mjs` 的父级 checkout
-3. `PATH` 里的 `clawser`
-
-菜单栏程序使用的也是同一套 CLI 行为：`Start`/`Stop` 只控制 relay，
-不会替你点击 Chrome 扩展图标。
 
 ## 常用 CLI 命令
 
@@ -404,13 +371,4 @@ clawser status --json
 clawser start --json
 clawser extension install --json
 clawser tabs --json
-```
-
-菜单栏程序检查：
-
-```bash
-cd tray
-go test ./...
-./scripts/build-macos-app.sh
-open -n "/tmp/Clawser Tray.app"
 ```

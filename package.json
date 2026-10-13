@@ -36,7 +36,6 @@
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
     "format:fix": "oxfmt --write",
-    "installer:macos-pkg": "bash scripts/build-macos-pkg.sh",
     "installer:payload": "node scripts/build-installer-payload.mjs",
     "lint": "oxlint --type-aware src test scripts/run-node.mjs scripts/tsdown-build.mjs tsdown.config.ts vitest.config.ts",
     "lint:fix": "oxlint --type-aware --fix src test scripts/run-node.mjs scripts/tsdown-build.mjs tsdown.config.ts vitest.config.ts && pnpm format:fix",

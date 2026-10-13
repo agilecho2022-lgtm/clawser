@@ -6,10 +6,7 @@ Clawser is a local Chrome automation CLI. It starts a local relay, connects to
 Chrome through the **Clawser Browser Relay** extension, and exposes browser  
 operations as CLI commands that are easy to call from scripts.
 
-This checkout also includes a lightweight Go tray/menu bar helper for starting  
-and stopping the local relay.
-
-Chinese documentation: [README\_ZH.md](README_ZH.md)
+Chinese documentation: [README_ZH.md](README_ZH.md)
 
 ## What Works Today
 
@@ -21,7 +18,7 @@ Chinese documentation: [README\_ZH.md](README_ZH.md)
   storage.
 - Interact with pages by ref: click, type, press, hover, drag, select, upload,  
   wait, evaluate, screenshots, downloads, dialogs, and traces.
-- Run as a CLI or through the included macOS menu bar helper.
+- Run as a CLI.
 - Use JSON output for Node.js/RPA scripts.
 
 Current intentional limits:
@@ -30,15 +27,12 @@ Current intentional limits:
 - A tab can be connected with `clawser attach` (no clicking needed) or by  
   clicking the pinned extension icon on the target tab; the badge shows `ON`  
   once attached.
-- The tray app is currently a local development app bundle, not a signed  
-  installer.
 
 ## Requirements
 
 - Node.js `22.12+`
 - pnpm
 - Google Chrome
-- Go `1.24+` only if you want to build the tray helper
 
 ## Quick Install
 
@@ -192,36 +186,6 @@ To disable the automatic Chrome open on `start`:
 ```bash
 CLAWSER_SKIP_CHROME_BOOTSTRAP=1 clawser start
 ```
-
-## Tray / Menu Bar Helper
-
-The repository includes a small Go tray app under `tray/`.
-
-Current menu:
-
-- `Start Clawser` or `Stop Clawser`, depending on relay state
-- relay status
-- `Quit`
-
-Build and run the local macOS app bundle:
-
-```bash
-cd tray
-./scripts/build-macos-app.sh
-open -n "/tmp/Clawser Tray.app"
-```
-
-The local app bundle is written to `/tmp` so development builds do not add  
-generated binaries to the repository.
-
-The tray app resolves Clawser in this order:
-
-1. `CLAWSER_BIN`
-2. The nearest parent checkout containing `clawser.mjs`
-3. `clawser` on `PATH`
-
-The tray app uses the same CLI behavior as `clawser start` and `clawser stop`.  
-It starts/stops the relay only; it does not click the Chrome extension for you.
 
 ## Common CLI Commands
 
@@ -415,13 +379,4 @@ clawser status --json
 clawser start --json
 clawser extension install --json
 clawser tabs --json
-```
-
-Tray checks:
-
-```bash
-cd tray
-go test ./...
-./scripts/build-macos-app.sh
-open -n "/tmp/Clawser Tray.app"
 ```
