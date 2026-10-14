@@ -2,7 +2,6 @@ import type { Command } from "commander";
 import { resolveBrowserConfig, resolveProfile } from "../browser/config.js";
 import { resolveBrowserControlAuth } from "../browser/control-auth.js";
 import { loadConfig } from "../config/config.js";
-import { handleBrowserOnlyGatewayRequest } from "../gateway/server-methods/browser-only.js";
 import { withProgress } from "./progress.js";
 
 export type GatewayRpcOpts = {
@@ -193,6 +192,10 @@ export async function callGatewayFromCli(
       let settled = false;
       let payload: unknown;
       let error: unknown;
+      // Normal CLI requests use the daemon; defer the local browser engine's
+      // cold-start cost until the transport actually needs the fallback.
+      const { handleBrowserOnlyGatewayRequest } =
+        await import("../gateway/server-methods/browser-only.js");
       await handleBrowserOnlyGatewayRequest({
         req: {
           type: "req",
