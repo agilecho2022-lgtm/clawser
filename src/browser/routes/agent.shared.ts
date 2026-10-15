@@ -130,6 +130,10 @@ type RouteWithPwParams<T> = {
   run: (ctx: RouteTabPwContext) => Promise<T>;
 };
 
+// Requests for one profile share pw-session's cached connectOverCDP client.
+// A probe finishing must not disconnect a still-running action on that client.
+const activePlaywrightRoutes = new Map<string, number>();
+
 export async function withPlaywrightRouteContext<T>(
   params: RouteWithPwParams<T>,
 ): Promise<T | undefined> {
@@ -143,11 +147,22 @@ export async function withPlaywrightRouteContext<T>(
       if (!pw) {
         return undefined as T | undefined;
       }
+      const connectionKey = cdpUrl.replace(/\/$/, "");
+      activePlaywrightRoutes.set(
+        connectionKey,
+        (activePlaywrightRoutes.get(connectionKey) ?? 0) + 1,
+      );
       try {
         return await params.run({ profileCtx, tab, cdpUrl, pw });
       } finally {
-        if (!params.keepAlive) {
-          await pw.closePlaywrightBrowserConnection({ cdpUrl }).catch(() => {});
+        const remaining = (activePlaywrightRoutes.get(connectionKey) ?? 1) - 1;
+        if (remaining > 0) {
+          activePlaywrightRoutes.set(connectionKey, remaining);
+        } else {
+          activePlaywrightRoutes.delete(connectionKey);
+          if (!params.keepAlive) {
+            await pw.closePlaywrightBrowserConnection({ cdpUrl }).catch(() => {});
+          }
         }
       }
     },
