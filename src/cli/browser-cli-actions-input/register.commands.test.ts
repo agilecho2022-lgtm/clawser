@@ -73,6 +73,25 @@ describe("browser action input cli commands", () => {
     expect(runtime.log).toHaveBeenCalledWith("navigated to https://example.com/done");
   });
 
+  it("sends DOM-ready navigation mode for an entry page", async () => {
+    await runBrowserAction([
+      "navigate",
+      "https://example.com/entry",
+      "--target-id",
+      "tab-1",
+      "--wait-until",
+      "domcontentloaded",
+    ]);
+    expect(lastBrowserRequest()).toMatchObject({
+      path: "/navigate",
+      body: {
+        url: "https://example.com/entry",
+        targetId: "tab-1",
+        waitUntil: "domcontentloaded",
+      },
+    });
+  });
+
   it("sends resize request", async () => {
     await runBrowserAction(["resize", "1280", "720"]);
     expect(sharedMocks.callBrowserResize).toHaveBeenCalledWith(

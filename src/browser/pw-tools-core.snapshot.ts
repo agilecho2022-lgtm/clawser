@@ -194,6 +194,7 @@ export async function navigateViaPlaywright(opts: {
   targetId?: string;
   url: string;
   timeoutMs?: number;
+  waitUntil?: "load" | "domcontentloaded";
   ssrfPolicy?: SsrFPolicy;
 }): Promise<{ url: string }> {
   const isRetryableNavigateError = (err: unknown): boolean => {
@@ -220,7 +221,11 @@ export async function navigateViaPlaywright(opts: {
   const timeout = Math.max(1000, Math.min(120_000, opts.timeoutMs ?? 20_000));
   let page = await getPageForTargetId(opts);
   ensurePageState(page);
-  const navigate = async () => await page.goto(url, { timeout });
+  const navigate = async () =>
+    await page.goto(url, {
+      timeout,
+      ...(opts.waitUntil ? { waitUntil: opts.waitUntil } : {}),
+    });
   let response;
   try {
     response = await navigate();

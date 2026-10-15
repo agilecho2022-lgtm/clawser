@@ -97,9 +97,15 @@ export function registerBrowserAgentSnapshotRoutes(
     const body = readBody(req);
     const url = toStringOrEmpty(body.url);
     const targetId = toStringOrEmpty(body.targetId) || undefined;
+    const waitUntilRaw = toStringOrEmpty(body.waitUntil);
     if (!url) {
       return jsonError(res, 400, "url is required");
     }
+    if (waitUntilRaw && waitUntilRaw !== "load" && waitUntilRaw !== "domcontentloaded") {
+      return jsonError(res, 400, "waitUntil must be load or domcontentloaded");
+    }
+    const waitUntil: "load" | "domcontentloaded" | undefined =
+      waitUntilRaw === "load" || waitUntilRaw === "domcontentloaded" ? waitUntilRaw : undefined;
     await withPlaywrightRouteContext({
       req,
       res,
@@ -111,6 +117,7 @@ export function registerBrowserAgentSnapshotRoutes(
           cdpUrl,
           targetId: tab.targetId,
           url,
+          ...(waitUntil ? { waitUntil } : {}),
           ...withBrowserNavigationPolicy(ctx.state().resolved.ssrfPolicy),
         });
         const currentTargetId = await resolveTargetIdAfterNavigate({

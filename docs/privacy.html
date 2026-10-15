@@ -129,67 +129,212 @@
       <p class="langbar"><a href="#en">English</a><a href="#zh">中文</a></p>
       <section id="en">
         <h2>English</h2>
-        <div class="lede"><p>Clawser Browser Relay connects browser automation that you authorize on your own computer to Microsoft Edge tabs through a local relay. It has no advertising or analytics service and does not upload data to a publisher-operated remote server. Local processing still involves access to page content and tab data, as described below.</p></div>
+        <div class="lede">
+          <p>
+            Clawser Browser Relay connects browser automation that you authorize on your own
+            computer to Microsoft Edge tabs through a local relay. It has no advertising or
+            analytics service and does not upload data to a publisher-operated remote server. Local
+            processing still involves access to page content and tab data, as described below.
+          </p>
+        </div>
         <h3>1. Purpose and control</h3>
-        <p>The extension requires a separately installed local Clawser client. You can attach or detach the current ordinary web tab with the toolbar icon. Your local client can also request attachment of selected tabs. An attached tab can be inspected and controlled through the Chrome DevTools Protocol, including page navigation, form interaction, screenshots and evaluation of expressions supplied by your local scripts. Use only local clients and scripts you trust. Detachment stops that tab's current extension debugging session.</p>
+        <p>
+          The extension requires a separately installed local Clawser client. You can attach or
+          detach the current ordinary web tab with the toolbar icon. Your local client can also
+          request attachment of selected tabs. An attached tab can be inspected and controlled
+          through the Chrome DevTools Protocol, including page navigation, form interaction,
+          screenshots and evaluation of expressions supplied by your local scripts. Use only local
+          clients and scripts you trust. Detachment stops that tab's current extension debugging
+          session.
+        </p>
         <h3>2. Data accessed and used</h3>
         <ul>
-          <li>Tab metadata: URLs, titles, tab/window/target identifiers, navigation and attachment state, and page lifecycle state.</li>
-          <li>Website content and user-requested activity: the page structure, text, form values, screenshots, browser events and results of actions requested by your local automation.</li>
-          <li>Page content can contain personal identifiers. When your authorized scripts request them, CDP can also access session and authentication information, such as cookies or browser storage. The extension does not operate a separate password-collection service.</li>
-          <li>Local diagnostics include recent tab URLs, timestamps, lifecycle events and worker-start metadata. They support troubleshooting and session recovery and are delivered to the local relay.</li>
+          <li>
+            Tab metadata: URLs, titles, tab/window/target identifiers, navigation and attachment
+            state, and page lifecycle state.
+          </li>
+          <li>
+            Website content and user-requested activity: the page structure, text, form values,
+            screenshots, browser events and results of actions requested by your local automation.
+          </li>
+          <li>
+            Page content can contain personal identifiers. When your authorized scripts request
+            them, CDP can also access session and authentication information, such as cookies or
+            browser storage. The extension does not operate a separate password-collection service.
+          </li>
+          <li>
+            Local diagnostics include recent tab URLs, timestamps, lifecycle events and worker-start
+            metadata. They support troubleshooting and session recovery and are delivered to the
+            local relay.
+          </li>
         </ul>
-        <p>This access serves the disclosed local automation function. The extension does not build an advertising profile or upload a browser-history database to the publisher. The data available to a script depends on the page and commands you authorize.</p>
+        <p>
+          This access serves the disclosed local automation function. The extension does not build
+          an advertising profile or upload a browser-history database to the publisher. The data
+          available to a script depends on the page and commands you authorize.
+        </p>
         <h3>3. Local storage and retention</h3>
-        <p><code>chrome.storage.local</code> holds the relay port, a one-time help flag, a worker-start counter, configured business URL prefixes, and business-tab protection recovery records. These recovery records include the relevant tab URL, tab/window/target identifiers and the original automatic-discard setting. They allow the extension to restore a setting safely after interruption. They are not limited to connection preferences.</p>
-        <p><code>chrome.storage.session</code> holds temporary attachment/session identifiers for recovery after a service-worker restart. Recent diagnostic events are retained in memory, with up to 100 tab diagnostic events, and sent to the local relay. The extension's storage code does not intentionally persist page bodies, screenshots or passwords. A URL itself may contain sensitive information, so recovery metadata should be treated as local user data.</p>
-        <p>Protection records are removed through normal release/cleanup handling, but interrupted sessions can leave recovery records until later cleanup. Local configuration remains until changed or removed. Uninstalling the extension removes its browser-managed extension storage. The separate local client may retain logs or automation output under its own settings.</p>
+        <p>
+          <code>chrome.storage.local</code> holds the relay port, a one-time help flag, a
+          worker-start counter, configured business URL prefixes, and business-tab protection
+          recovery records. These recovery records include the relevant tab URL, tab/window/target
+          identifiers and the original automatic-discard setting. They allow the extension to
+          restore a setting safely after interruption. They are not limited to connection
+          preferences.
+        </p>
+        <p>
+          <code>chrome.storage.session</code> holds temporary attachment/session identifiers for
+          recovery after a service-worker restart. Recent diagnostic events are retained in memory,
+          with up to 100 tab diagnostic events, and sent to the local relay. The extension's storage
+          code does not intentionally persist page bodies, screenshots or passwords. A URL itself
+          may contain sensitive information, so recovery metadata should be treated as local user
+          data.
+        </p>
+        <p>
+          Protection records are removed through normal release/cleanup handling, but interrupted
+          sessions can leave recovery records until later cleanup. Local configuration remains until
+          changed or removed. Uninstalling the extension removes its browser-managed extension
+          storage. The separate local client may retain logs or automation output under its own
+          settings.
+        </p>
         <h3>4. Connections and other software</h3>
-        <p>The extension's normal relay connections use HTTP/WebSocket on <code>127.0.0.1</code>, with port <code>18792</code> by default. It has no publisher-operated telemetry, analytics, advertising or crash-reporting endpoint. All service-worker and options-page code is included in the extension package; user-directed CDP expressions originate from the separate local client and execute in the attached webpage.</p>
-        <p>Automated actions can cause websites to send or receive data, just as manual interactions do. How your local client and scripts store, transmit or otherwise use content is determined by those programs and their configuration. This policy does not promise that data processed by a separate client or website will stay on your computer.</p>
+        <p>
+          The extension's normal relay connections use HTTP/WebSocket on <code>127.0.0.1</code>,
+          with port <code>18792</code> by default. It has no publisher-operated telemetry,
+          analytics, advertising or crash-reporting endpoint. All service-worker and options-page
+          code is included in the extension package; user-directed CDP expressions originate from
+          the separate local client and execute in the attached webpage.
+        </p>
+        <p>
+          Automated actions can cause websites to send or receive data, just as manual interactions
+          do. How your local client and scripts store, transmit or otherwise use content is
+          determined by those programs and their configuration. This policy does not promise that
+          data processed by a separate client or website will stay on your computer.
+        </p>
         <h3>5. Permissions</h3>
         <dl class="perm">
-          <dt>debugger</dt><dd>Attach to authorized tabs and relay CDP commands and events for browser automation.</dd>
-          <dt>tabs / activeTab / webNavigation</dt><dd>Identify requested tabs, support toolbar attachment, track navigation and lifecycle changes, and restore the prior automatic-discard setting when safe.</dd>
-          <dt>Access to all websites</dt><dd>Support websites chosen by the user at runtime and local relay checks. This does not mean every page is automatically attached.</dd>
-          <dt>storage</dt><dd>Retain the configuration, temporary session state and URL-bearing recovery metadata described above.</dd>
-          <dt>alarms</dt><dd>Schedule local connection health checks and reconnection.</dd>
+          <dt>debugger</dt>
+          <dd>
+            Attach to authorized tabs and relay CDP commands and events for browser automation.
+          </dd>
+          <dt>tabs / activeTab / webNavigation</dt>
+          <dd>
+            Identify requested tabs, support toolbar attachment, track navigation and lifecycle
+            changes, and restore the prior automatic-discard setting when safe.
+          </dd>
+          <dt>Access to all websites</dt>
+          <dd>
+            Support websites chosen by the user at runtime and local relay checks. This does not
+            mean every page is automatically attached.
+          </dd>
+          <dt>storage</dt>
+          <dd>
+            Retain the configuration, temporary session state and URL-bearing recovery metadata
+            described above.
+          </dd>
+          <dt>alarms</dt>
+          <dd>Schedule local connection health checks and reconnection.</dd>
         </dl>
         <h3>6. Sharing, changes and contact</h3>
-        <p>The publisher does not receive or sell user data through this extension. Data is passed to the local client to carry out user-authorized automation. Independent clients, scripts and websites are responsible for their own subsequent processing. We do not use extension data for unrelated advertising, creditworthiness or lending decisions.</p>
-        <p>Changes to this policy will be published here with an updated date. For questions or deletion guidance, contact <a href="mailto:sigmazel@hotmail.com">sigmazel@hotmail.com</a> or use <a href="https://github.com/agilecho2022-lgtm/clawser/issues">the project issue tracker</a>. Do not post credentials or private page content in public issues.</p>
+        <p>
+          The publisher does not receive or sell user data through this extension. Data is passed to
+          the local client to carry out user-authorized automation. Independent clients, scripts and
+          websites are responsible for their own subsequent processing. We do not use extension data
+          for unrelated advertising, creditworthiness or lending decisions.
+        </p>
+        <p>
+          Changes to this policy will be published here with an updated date. For questions or
+          deletion guidance, contact
+          <a href="mailto:sigmazel@hotmail.com">sigmazel@hotmail.com</a> or use
+          <a href="https://github.com/agilecho2022-lgtm/clawser/issues">the project issue tracker</a
+          >. Do not post credentials or private page content in public issues.
+        </p>
       </section>
       <section id="zh" lang="zh-CN">
         <h2>中文</h2>
-        <div class="lede"><p>Clawser Browser Relay 通过本机中继，把您授权的本地自动化程序连接到 Microsoft Edge 标签页。扩展没有广告或分析服务，不向发布者运营的远程服务器上传数据。本地处理仍会访问页面内容和标签页数据，具体如下。</p></div>
+        <div class="lede">
+          <p>
+            Clawser Browser Relay 通过本机中继，把您授权的本地自动化程序连接到 Microsoft Edge
+            标签页。扩展没有广告或分析服务，不向发布者运营的远程服务器上传数据。本地处理仍会访问页面内容和标签页数据，具体如下。
+          </p>
+        </div>
         <h3>一、用途与控制</h3>
-        <p>扩展需要另行安装本机 Clawser 客户端。您可点击工具栏图标接入或解除当前普通网页，也可由本机客户端要求接入指定标签页。接入后，客户端可通过 Chrome DevTools Protocol 读取页面、操作表单、导航、截图，并在网页中执行本机脚本提供的表达式。请仅运行您信任的客户端和脚本。解除接入会结束该标签页当前的扩展调试会话。</p>
+        <p>
+          扩展需要另行安装本机 Clawser
+          客户端。您可点击工具栏图标接入或解除当前普通网页，也可由本机客户端要求接入指定标签页。接入后，客户端可通过
+          Chrome DevTools Protocol
+          读取页面、操作表单、导航、截图，并在网页中执行本机脚本提供的表达式。请仅运行您信任的客户端和脚本。解除接入会结束该标签页当前的扩展调试会话。
+        </p>
         <h3>二、访问和使用的数据</h3>
         <ul>
           <li>标签页元数据：URL、标题、标签页/窗口/目标标识，以及导航、接入和页面生命周期状态。</li>
-          <li>网站内容及您要求的操作：页面结构、文字、表单值、截图、浏览器事件和本机自动化所请求操作的结果。</li>
-          <li>页面内容可能包含个人身份信息。您授权的脚本提出请求时，CDP 也能访问 Cookie、浏览器存储等会话与身份验证信息。扩展没有独立的密码采集服务。</li>
-          <li>本地诊断：近期标签页 URL、时间、生命周期事件及工作线程启动信息，用于排查问题和恢复会话，并传递给本机中继。</li>
+          <li>
+            网站内容及您要求的操作：页面结构、文字、表单值、截图、浏览器事件和本机自动化所请求操作的结果。
+          </li>
+          <li>
+            页面内容可能包含个人身份信息。您授权的脚本提出请求时，CDP 也能访问
+            Cookie、浏览器存储等会话与身份验证信息。扩展没有独立的密码采集服务。
+          </li>
+          <li>
+            本地诊断：近期标签页
+            URL、时间、生命周期事件及工作线程启动信息，用于排查问题和恢复会话，并传递给本机中继。
+          </li>
         </ul>
-        <p>这些访问用于已披露的本地自动化用途。扩展不建立广告画像，也不向发布者上传浏览历史数据库。脚本能访问的数据取决于您授权的页面与命令。</p>
+        <p>
+          这些访问用于已披露的本地自动化用途。扩展不建立广告画像，也不向发布者上传浏览历史数据库。脚本能访问的数据取决于您授权的页面与命令。
+        </p>
         <h3>三、本地存储与保留</h3>
-        <p><code>chrome.storage.local</code> 保存中继端口、一次性帮助提示标记、工作线程启动计数、配置的业务 URL 前缀，以及业务标签页保护恢复记录。恢复记录包含有关标签页 URL、标签页/窗口/目标标识和原有的自动丢弃设置，用于在中断后安全恢复设置。因此，保存内容不只有连接配置。</p>
-        <p><code>chrome.storage.session</code> 保存临时接入/会话标识，用于工作线程重启恢复。近期诊断事件保留在内存中，其中标签页诊断最多 100 条，并会传递给本机中继。扩展存储代码不主动持久化页面正文、截图或密码，但 URL 本身可能含有敏感信息，应把恢复元数据视为本地用户数据。</p>
-        <p>保护记录通过正常解除和清理流程移除；中断可能导致记录保留至后续清理。本机配置持续保留至修改或删除。卸载扩展会移除浏览器管理的扩展存储。独立本机客户端可能按其自身设置保存日志或自动化输出。</p>
+        <p>
+          <code>chrome.storage.local</code>
+          保存中继端口、一次性帮助提示标记、工作线程启动计数、配置的业务 URL
+          前缀，以及业务标签页保护恢复记录。恢复记录包含有关标签页
+          URL、标签页/窗口/目标标识和原有的自动丢弃设置，用于在中断后安全恢复设置。因此，保存内容不只有连接配置。
+        </p>
+        <p>
+          <code>chrome.storage.session</code>
+          保存临时接入/会话标识，用于工作线程重启恢复。近期诊断事件保留在内存中，其中标签页诊断最多
+          100 条，并会传递给本机中继。扩展存储代码不主动持久化页面正文、截图或密码，但 URL
+          本身可能含有敏感信息，应把恢复元数据视为本地用户数据。
+        </p>
+        <p>
+          保护记录通过正常解除和清理流程移除；中断可能导致记录保留至后续清理。本机配置持续保留至修改或删除。卸载扩展会移除浏览器管理的扩展存储。独立本机客户端可能按其自身设置保存日志或自动化输出。
+        </p>
         <h3>四、连接与其他软件</h3>
-        <p>扩展的正常中继连接使用 <code>127.0.0.1</code> 上的 HTTP/WebSocket，默认端口为 <code>18792</code>。没有发布者运营的遥测、分析、广告或崩溃上报端点。工作线程和设置页代码均随扩展包提供；用户指令中的 CDP 表达式来自独立本机客户端，并在接入的网页中执行。</p>
-        <p>自动化操作与人工操作一样，可能使业务网站收发数据。本机客户端及脚本后续如何保存、传输和使用内容，由这些程序及其配置决定。本政策不承诺经独立客户端或网站处理的数据始终留在您的电脑上。</p>
+        <p>
+          扩展的正常中继连接使用 <code>127.0.0.1</code> 上的 HTTP/WebSocket，默认端口为
+          <code>18792</code
+          >。没有发布者运营的遥测、分析、广告或崩溃上报端点。工作线程和设置页代码均随扩展包提供；用户指令中的
+          CDP 表达式来自独立本机客户端，并在接入的网页中执行。
+        </p>
+        <p>
+          自动化操作与人工操作一样，可能使业务网站收发数据。本机客户端及脚本后续如何保存、传输和使用内容，由这些程序及其配置决定。本政策不承诺经独立客户端或网站处理的数据始终留在您的电脑上。
+        </p>
         <h3>五、权限</h3>
         <dl class="perm">
-          <dt>debugger</dt><dd>接入已授权标签页，转发 CDP 命令与事件以执行浏览器自动化。</dd>
-          <dt>tabs / activeTab / webNavigation</dt><dd>识别指定标签页、支持工具栏接入、跟踪导航和生命周期变化，并在安全时恢复原自动丢弃设置。</dd>
-          <dt>全站访问</dt><dd>支持由用户在运行时选择的网站及本机中继检查，不表示自动接管所有页面。</dd>
-          <dt>storage</dt><dd>保存上述配置、临时会话状态和包含 URL 的恢复元数据。</dd>
-          <dt>alarms</dt><dd>安排本机连接健康检查和重连。</dd>
+          <dt>debugger</dt>
+          <dd>接入已授权标签页，转发 CDP 命令与事件以执行浏览器自动化。</dd>
+          <dt>tabs / activeTab / webNavigation</dt>
+          <dd>
+            识别指定标签页、支持工具栏接入、跟踪导航和生命周期变化，并在安全时恢复原自动丢弃设置。
+          </dd>
+          <dt>全站访问</dt>
+          <dd>支持由用户在运行时选择的网站及本机中继检查，不表示自动接管所有页面。</dd>
+          <dt>storage</dt>
+          <dd>保存上述配置、临时会话状态和包含 URL 的恢复元数据。</dd>
+          <dt>alarms</dt>
+          <dd>安排本机连接健康检查和重连。</dd>
         </dl>
         <h3>六、共享、变更与联系</h3>
-        <p>发布者不通过本扩展接收或出售用户数据。数据传给本机客户端用于您授权的自动化；独立客户端、脚本及网站负责各自的后续处理。扩展数据不用于无关广告、信用评估或贷款决策。</p>
-        <p>本政策变更会在此页发布并更新日期。如有疑问或需要删除指导，请联系 <a href="mailto:sigmazel@hotmail.com">sigmazel@hotmail.com</a>，或通过<a href="https://github.com/agilecho2022-lgtm/clawser/issues">项目问题页面</a>反馈。请勿在公开问题中发布凭据或私密页面内容。</p>
+        <p>
+          发布者不通过本扩展接收或出售用户数据。数据传给本机客户端用于您授权的自动化；独立客户端、脚本及网站负责各自的后续处理。扩展数据不用于无关广告、信用评估或贷款决策。
+        </p>
+        <p>
+          本政策变更会在此页发布并更新日期。如有疑问或需要删除指导，请联系
+          <a href="mailto:sigmazel@hotmail.com">sigmazel@hotmail.com</a>，或通过<a
+            href="https://github.com/agilecho2022-lgtm/clawser/issues"
+            >项目问题页面</a
+          >反馈。请勿在公开问题中发布凭据或私密页面内容。
+        </p>
       </section>
       <footer>Clawser Browser Relay · Privacy Policy · 14 October 2026</footer>
     </main>

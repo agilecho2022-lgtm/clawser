@@ -162,4 +162,32 @@ describe("browser control server", () => {
       endRef: "4",
     });
   });
+
+  it("passes DOM-ready navigation mode to the Playwright route", async () => {
+    const base = await startServerAndBase();
+    const response = await postJson<{ ok: boolean }>(`${base}/navigate`, {
+      url: "https://example.com/entry",
+      targetId: "abcd1234",
+      waitUntil: "domcontentloaded",
+    });
+    expect(response.ok).toBe(true);
+    expect(pwMocks.navigateViaPlaywright).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetId: "abcd1234",
+        url: "https://example.com/entry",
+        waitUntil: "domcontentloaded",
+      }),
+    );
+  });
+
+  it("rejects unsupported navigation readiness modes", async () => {
+    const base = await startServerAndBase();
+    const response = await realFetch(`${base}/navigate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/entry", waitUntil: "networkidle" }),
+    });
+    expect(response.status).toBe(400);
+    expect(pwMocks.navigateViaPlaywright).not.toHaveBeenCalled();
+  });
 });

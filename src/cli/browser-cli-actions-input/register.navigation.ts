@@ -14,6 +14,7 @@ export function registerBrowserNavigationCommands(
     .description("Navigate the current tab to a URL")
     .argument("<url>", "URL to navigate to")
     .option("--target-id <id>", "CDP target id (or unique prefix)")
+    .option("--wait-until <state>", "Navigation readiness: load or domcontentloaded")
     .action(async (url: string, opts, cmd) => {
       const { parent, profile } = resolveBrowserActionContext(cmd, parentOpts);
       try {
@@ -26,6 +27,7 @@ export function registerBrowserNavigationCommands(
             body: {
               url,
               targetId: opts.targetId?.trim() || undefined,
+              waitUntil: opts.waitUntil?.trim() || undefined,
             },
           },
           { timeoutMs: 20000 },

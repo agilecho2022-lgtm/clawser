@@ -259,11 +259,12 @@ Usage: clawser browser navigate [options] <url>
 Navigate the current tab to a URL
 
 Arguments:
-  url               URL to navigate to
+  url                   URL to navigate to
 
 Options:
-  --target-id <id>  CDP target id (or unique prefix)
-  -h, --help        display help for command
+  --target-id <id>      CDP target id (or unique prefix)
+  --wait-until <state>  Navigation readiness: load or domcontentloaded
+  -h, --help            display help for command
 
 ---
 

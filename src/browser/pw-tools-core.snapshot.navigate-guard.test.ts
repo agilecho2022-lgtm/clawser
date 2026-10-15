@@ -47,6 +47,28 @@ describe("pw-tools-core.snapshot navigate guard", () => {
     expect(result.url).toBe("https://example.com");
   });
 
+  it("can finish entry navigation when DOM is ready even if full load never finishes", async () => {
+    const goto = vi.fn(async (_url: string, options: { waitUntil?: string }) => {
+      if (options.waitUntil !== "domcontentloaded") {
+        throw new Error("page.goto: Timeout 20000ms exceeded while waiting for load");
+      }
+    });
+    setPwToolsCoreCurrentPage({
+      goto,
+      url: vi.fn(() => "https://example.com/entry"),
+    });
+
+    const result = await mod.navigateViaPlaywright({
+      cdpUrl: "http://127.0.0.1:18792",
+      targetId: "tab-1",
+      url: "https://example.com/entry",
+      waitUntil: "domcontentloaded",
+      ssrfPolicy: { allowPrivateNetwork: true },
+    });
+
+    expect(result.url).toBe("https://example.com/entry");
+  });
+
   it("reconnects and retries once when navigation detaches frame", async () => {
     const goto = vi
       .fn<(...args: unknown[]) => Promise<void>>()
