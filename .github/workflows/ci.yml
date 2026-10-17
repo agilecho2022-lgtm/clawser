@@ -35,8 +35,7 @@ jobs:
       - name: Test
         run: pnpm test
   compat-node22:
-    needs: [docs-scope]
-    if: github.event_name == 'push' && needs.docs-scope.outputs.docs_only != 'true'
+    if: github.event_name == 'push'
     runs-on: blacksmith-16vcpu-ubuntu-2404
     steps:
       - name: Checkout
