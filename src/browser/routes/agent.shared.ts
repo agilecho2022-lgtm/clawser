@@ -1,3 +1,4 @@
+import type { ResolvedBrowserProfile } from "../config.js";
 import { toBrowserErrorResponse } from "../errors.js";
 import type { PwAiModule } from "../pw-ai-module.js";
 import { getPwAiModule as getPwAiModuleBase } from "../pw-ai-module.js";
@@ -92,6 +93,17 @@ type RouteTabPwContext = RouteTabContext & {
   pw: PwAiModule;
 };
 
+export async function closePlaywrightBrowserConnectionIfEphemeral(params: {
+  profile: ResolvedBrowserProfile;
+  cdpUrl: string;
+  pw: Pick<PwAiModule, "closePlaywrightBrowserConnection">;
+}): Promise<void> {
+  if (params.profile.driver === "extension") {
+    return;
+  }
+  await params.pw.closePlaywrightBrowserConnection({ cdpUrl: params.cdpUrl }).catch(() => {});
+}
+
 type RouteWithTabParams<T> = {
   req: BrowserRequest;
   res: BrowserResponse;
@@ -160,8 +172,14 @@ export async function withPlaywrightRouteContext<T>(
           activePlaywrightRoutes.set(connectionKey, remaining);
         } else {
           activePlaywrightRoutes.delete(connectionKey);
+          // Reusing the extension profile's CDP connection prevents Playwright
+          // from creating a new utility world for every browser command.
           if (!params.keepAlive) {
-            await pw.closePlaywrightBrowserConnection({ cdpUrl }).catch(() => {});
+            await closePlaywrightBrowserConnectionIfEphemeral({
+              profile: profileCtx.profile,
+              cdpUrl,
+              pw,
+            });
           }
         }
       }

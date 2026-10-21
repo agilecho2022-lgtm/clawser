@@ -1386,6 +1386,25 @@ export async function ensureChromeExtensionRelayServer(opts: {
       cdpClients.add(ws);
       cdpSubscribers.set(ws, { id: nextCdpSubscriberId++, broadcastCopies: 0 });
       relayCounters.cdpClientConnections++;
+      // Chrome retains Page.addScriptToEvaluateOnNewDocument registrations when
+      // this relay's CDP websocket closes. Keep only opaque script identifiers so
+      // each client can release its own registrations on disconnect.
+      const ownedNewDocumentScripts = new Map<string, { sessionId: string; identifier: string }>();
+      const scriptKey = (sessionId: string, identifier: string) => `${sessionId}:${identifier}`;
+      const removeOwnedScript = (script: { sessionId: string; identifier: string }) => {
+        if (!extensionConnected() || !connectedTargets.has(script.sessionId)) {
+          return;
+        }
+        void sendToExtension({
+          id: nextExtensionId++,
+          method: "forwardCDPCommand",
+          params: {
+            method: "Page.removeScriptToEvaluateOnNewDocument",
+            sessionId: script.sessionId,
+            params: { identifier: script.identifier },
+          },
+        }).catch(() => {});
+      };
 
       ws.on("message", async (data) => {
         let cmd: CdpCommand | null = null;
@@ -1415,6 +1434,25 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
         try {
           const result = await routeCdpCommand(cmd);
+
+          if (cmd.method === "Page.addScriptToEvaluateOnNewDocument" && cmd.sessionId) {
+            const identifier = isRecord(result) ? result.identifier : undefined;
+            if (typeof identifier === "string" && identifier) {
+              const script = { sessionId: cmd.sessionId, identifier };
+              if (ws.readyState === WebSocket.OPEN) {
+                ownedNewDocumentScripts.set(scriptKey(cmd.sessionId, identifier), script);
+              } else {
+                // The response can race with websocket close; still release it.
+                removeOwnedScript(script);
+              }
+            }
+          }
+          if (cmd.method === "Page.removeScriptToEvaluateOnNewDocument" && cmd.sessionId) {
+            const identifier = isRecord(cmd.params) ? cmd.params.identifier : undefined;
+            if (typeof identifier === "string") {
+              ownedNewDocumentScripts.delete(scriptKey(cmd.sessionId, identifier));
+            }
+          }
 
           if (cmd.method === "Target.setAutoAttach" && !cmd.sessionId) {
             ensureTargetEventsForClient(ws, "autoAttach");
@@ -1461,6 +1499,10 @@ export async function ensureChromeExtensionRelayServer(opts: {
       ws.on("close", () => {
         cdpClients.delete(ws);
         cdpSubscribers.delete(ws);
+        for (const script of ownedNewDocumentScripts.values()) {
+          removeOwnedScript(script);
+        }
+        ownedNewDocumentScripts.clear();
         relayCounters.cdpClientDisconnections++;
       });
     });

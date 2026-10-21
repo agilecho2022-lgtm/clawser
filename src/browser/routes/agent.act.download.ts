@@ -1,5 +1,10 @@
 import type { BrowserRouteContext } from "../server-context.js";
-import { readBody, resolveTargetIdFromBody, withPlaywrightRouteContext } from "./agent.shared.js";
+import {
+  closePlaywrightBrowserConnectionIfEphemeral,
+  readBody,
+  resolveTargetIdFromBody,
+  withPlaywrightRouteContext,
+} from "./agent.shared.js";
 import { ensureOutputRootDir, resolveWritableOutputPathOrRespond } from "./output-paths.js";
 import { DEFAULT_DOWNLOAD_DIR } from "./path-output.js";
 import type { BrowserRouteRegistrar } from "./types.js";
@@ -29,7 +34,7 @@ export function registerBrowserAgentActDownloadRoutes(
       ctx,
       targetId,
       feature: "wait for download",
-      run: async ({ cdpUrl, tab, pw }) => {
+      run: async ({ cdpUrl, tab, pw, profileCtx }) => {
         await ensureOutputRootDir(DEFAULT_DOWNLOAD_DIR);
         let downloadPath: string | undefined;
         if (out.trim()) {
@@ -52,7 +57,11 @@ export function registerBrowserAgentActDownloadRoutes(
             path: downloadPath,
           });
         } finally {
-          await pw.closePlaywrightBrowserConnection({ cdpUrl }).catch(() => {});
+          await closePlaywrightBrowserConnectionIfEphemeral({
+            profile: profileCtx.profile,
+            cdpUrl,
+            pw,
+          });
         }
         res.json({ ok: true, targetId: tab.targetId, download: result });
       },
@@ -78,7 +87,7 @@ export function registerBrowserAgentActDownloadRoutes(
       ctx,
       targetId,
       feature: "download",
-      run: async ({ cdpUrl, tab, pw }) => {
+      run: async ({ cdpUrl, tab, pw, profileCtx }) => {
         await ensureOutputRootDir(DEFAULT_DOWNLOAD_DIR);
         const downloadPath = await resolveWritableOutputPathOrRespond({
           res,
@@ -98,7 +107,11 @@ export function registerBrowserAgentActDownloadRoutes(
             path: downloadPath,
           });
         } finally {
-          await pw.closePlaywrightBrowserConnection({ cdpUrl }).catch(() => {});
+          await closePlaywrightBrowserConnectionIfEphemeral({
+            profile: profileCtx.profile,
+            cdpUrl,
+            pw,
+          });
         }
         res.json({ ok: true, targetId: tab.targetId, download: result });
       },

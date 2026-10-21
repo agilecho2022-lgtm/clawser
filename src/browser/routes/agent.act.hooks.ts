@@ -1,5 +1,10 @@
 import type { BrowserRouteContext } from "../server-context.js";
-import { readBody, resolveTargetIdFromBody, withPlaywrightRouteContext } from "./agent.shared.js";
+import {
+  closePlaywrightBrowserConnectionIfEphemeral,
+  readBody,
+  resolveTargetIdFromBody,
+  withPlaywrightRouteContext,
+} from "./agent.shared.js";
 import { DEFAULT_UPLOAD_DIR, resolveExistingPathsWithinRoot } from "./path-output.js";
 import type { BrowserRouteRegistrar } from "./types.js";
 import { jsonError, toBoolean, toNumber, toStringArray, toStringOrEmpty } from "./utils.js";
@@ -27,7 +32,7 @@ export function registerBrowserAgentActHookRoutes(
       targetId,
       feature: "file chooser hook",
       keepAlive: true,
-      run: async ({ cdpUrl, tab, pw }) => {
+      run: async ({ cdpUrl, tab, pw, profileCtx }) => {
         const uploadPathsResult = await resolveExistingPathsWithinRoot({
           rootDir: DEFAULT_UPLOAD_DIR,
           requestedPaths: paths,
@@ -52,7 +57,11 @@ export function registerBrowserAgentActHookRoutes(
               paths: resolvedPaths,
             });
           } finally {
-            await pw.closePlaywrightBrowserConnection({ cdpUrl }).catch(() => {});
+            await closePlaywrightBrowserConnectionIfEphemeral({
+              profile: profileCtx.profile,
+              cdpUrl,
+              pw,
+            });
           }
         } else {
           await pw.armFileUploadViaPlaywright({

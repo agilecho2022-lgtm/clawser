@@ -10,6 +10,7 @@ import {
 } from "../screenshot.js";
 import type { BrowserRouteContext } from "../server-context.js";
 import {
+  closePlaywrightBrowserConnectionIfEphemeral,
   getPwAiModule,
   handleRouteError,
   readBody,
@@ -343,9 +344,11 @@ export function registerBrowserAgentSnapshotRoutes(
             ...snap,
           });
         } finally {
-          await pw
-            .closePlaywrightBrowserConnection({ cdpUrl: profileCtx.profile.cdpUrl })
-            .catch(() => {});
+          await closePlaywrightBrowserConnectionIfEphemeral({
+            profile: profileCtx.profile,
+            cdpUrl: profileCtx.profile.cdpUrl,
+            pw,
+          });
         }
       }
 

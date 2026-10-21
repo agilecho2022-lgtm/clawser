@@ -367,6 +367,76 @@ describe("chrome extension relay server", () => {
     ext.close();
   });
 
+  it("releases a disconnected CDP client's new-document script", async () => {
+    const { port, ext } = await startRelayWithExtension();
+    const extensionMessages = createMessageQueue(ext);
+    ext.send(
+      JSON.stringify({
+        method: "forwardCDPEvent",
+        params: {
+          method: "Target.attachedToTarget",
+          params: {
+            sessionId: "cb-tab-script",
+            targetInfo: {
+              targetId: "script-target",
+              type: "page",
+              url: "https://example.test/",
+            },
+          },
+        },
+      }),
+    );
+    await waitForListMatch(
+      async () =>
+        (await fetch(`${cdpUrl}/json/list`, { headers: relayAuthHeaders(cdpUrl) }).then((r) =>
+          r.json(),
+        )) as Array<{ id?: string }>,
+      (list) => list.some((entry) => entry.id === "script-target"),
+    );
+
+    const cdp = new WebSocket(`ws://127.0.0.1:${port}/cdp`, {
+      headers: relayAuthHeaders(`ws://127.0.0.1:${port}/cdp`),
+    });
+    await waitForOpen(cdp);
+    const cdpMessages = createMessageQueue(cdp);
+    cdp.send(
+      JSON.stringify({
+        id: 41,
+        method: "Page.addScriptToEvaluateOnNewDocument",
+        sessionId: "cb-tab-script",
+        params: { source: "", worldName: "__playwright_utility_world_test" },
+      }),
+    );
+    const add = JSON.parse(await extensionMessages.next()) as {
+      id: number;
+      method: string;
+      params: { method: string; sessionId: string };
+    };
+    expect(add.params).toMatchObject({
+      method: "Page.addScriptToEvaluateOnNewDocument",
+      sessionId: "cb-tab-script",
+    });
+    ext.send(JSON.stringify({ id: add.id, result: { identifier: "owned-script-41" } }));
+    expect(JSON.parse(await cdpMessages.next())).toMatchObject({
+      id: 41,
+      result: { identifier: "owned-script-41" },
+    });
+
+    cdp.close();
+    await waitForClose(cdp);
+    const cleanup = JSON.parse(await extensionMessages.next()) as {
+      id: number;
+      params: { method: string; sessionId: string; params: { identifier: string } };
+    };
+    expect(cleanup.params).toMatchObject({
+      method: "Page.removeScriptToEvaluateOnNewDocument",
+      sessionId: "cb-tab-script",
+      params: { identifier: "owned-script-41" },
+    });
+    ext.send(JSON.stringify({ id: cleanup.id, result: {} }));
+    ext.close();
+  });
+
   it("serves authenticated CDP discovery endpoints", async () => {
     const { port, ext } = await startRelayWithExtension();
     const baseUrl = `http://127.0.0.1:${port}`;
