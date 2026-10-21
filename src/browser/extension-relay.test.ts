@@ -285,6 +285,14 @@ describe("chrome extension relay server", () => {
       const body = await response.json();
       expect(body.connected).toBe(true);
       expect(body.pendingRequests).toEqual([]);
+      expect(body.relay).toMatchObject({
+        attachedEvents: 0,
+        detachedEvents: 0,
+        contextCreatedEvents: 0,
+        contextDestroyedEvents: 0,
+        liveTargets: 0,
+        liveCdpClients: 0,
+      });
       expect(body.snapshot.tabs).toEqual([
         { tabId: 7, discarded: true, state: "minimized", attached: false },
       ]);
@@ -292,6 +300,11 @@ describe("chrome extension relay server", () => {
         headers: relayAuthHeaders(cdpUrl),
       });
       await waitForOpen(cdp);
+      const withClient = await fetch(`${cdpUrl}/extension/diagnostics`, {
+        headers: relayAuthHeaders(cdpUrl),
+      }).then((response) => response.json());
+      expect(withClient.relay.liveCdpClients).toBe(1);
+      expect(withClient.relay.liveCdpSubscribers).toEqual([{ id: 1, broadcastCopies: 0 }]);
       cdp.send(
         JSON.stringify({ id: 99, method: "Target.createTarget", params: { url: "about:blank" } }),
       );

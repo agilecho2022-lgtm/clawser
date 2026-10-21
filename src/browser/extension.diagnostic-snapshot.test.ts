@@ -51,6 +51,9 @@ it("snapshot includes discarded unattached tabs and exact window state without w
   const run = vm.runInNewContext(source.slice(begin, end) + "\nhandleForwardCdpCommand", {
     chrome,
     tabs: new Map(),
+    childSessionToTab: new Map(),
+    liveContexts: new Map(),
+    lifecycleStats: { recentContextEvents: [], forwardingListenerRegistrations: 1 },
     tabDiagnosticEvents: [],
     setTimeout,
     clearTimeout,
@@ -112,6 +115,9 @@ it("does not choose one of two debugger targets for the same tab", async () => {
   const run = vm.runInNewContext(source.slice(begin, end) + "\nhandleForwardCdpCommand", {
     chrome,
     tabs: new Map(),
+    childSessionToTab: new Map(),
+    liveContexts: new Map(),
+    lifecycleStats: { recentContextEvents: [], forwardingListenerRegistrations: 1 },
     tabDiagnosticEvents: [],
     setTimeout,
     clearTimeout,

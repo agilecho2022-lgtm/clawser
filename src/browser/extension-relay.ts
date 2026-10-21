@@ -338,7 +338,18 @@ export async function ensureChromeExtensionRelayServer(opts: {
     let extensionWs: WebSocket | null = null;
     let lastPongAt: number | null = null;
     const cdpClients = new Set<WebSocket>();
+    const cdpSubscribers = new Map<WebSocket, { id: number; broadcastCopies: number }>();
+    let nextCdpSubscriberId = 1;
     const connectedTargets = new Map<string, ConnectedTarget>();
+    const relayCounters = {
+      attachedEvents: 0,
+      detachedEvents: 0,
+      contextCreatedEvents: 0,
+      contextDestroyedEvents: 0,
+      broadcastCopies: 0,
+      cdpClientConnections: 0,
+      cdpClientDisconnections: 0,
+    };
     let downloadBehavior: DownloadBehavior | null = null;
     const downloadsByGuid = new Map<string, DownloadRecord>();
     // 握手状态：连接建立后 relay 发 connect.challenge（携带 nonce），扩展回 connect
@@ -558,6 +569,11 @@ export async function ensureChromeExtensionRelayServer(opts: {
           continue;
         }
         ws.send(msg);
+        relayCounters.broadcastCopies++;
+        const subscriber = cdpSubscribers.get(ws);
+        if (subscriber) {
+          subscriber.broadcastCopies++;
+        }
       }
     };
 
@@ -911,6 +927,15 @@ export async function ensureChromeExtensionRelayServer(opts: {
           const diagnostic = {
             connected: extensionConnected(),
             lastPongAgoMs: lastPongAt === null ? null : Math.max(0, now - lastPongAt),
+            relay: {
+              ...relayCounters,
+              liveTargets: connectedTargets.size,
+              liveCdpClients: cdpClients.size,
+              liveCdpListeners: cdpClients.size,
+              liveCdpSubscribers: [...cdpSubscribers.values()].map((subscriber) => ({
+                ...subscriber,
+              })),
+            },
             pendingRequests: Array.from(pendingExtension.values())
               .filter((p) => p.method !== "Clawser.diagnosticSnapshot")
               .map((p) => ({
@@ -1217,6 +1242,19 @@ export async function ensureChromeExtensionRelayServer(opts: {
           }
 
           if (method === "Target.attachedToTarget") {
+            relayCounters.attachedEvents++;
+          }
+          if (method === "Target.detachedFromTarget") {
+            relayCounters.detachedEvents++;
+          }
+          if (method === "Runtime.executionContextCreated") {
+            relayCounters.contextCreatedEvents++;
+          }
+          if (method === "Runtime.executionContextDestroyed") {
+            relayCounters.contextDestroyedEvents++;
+          }
+
+          if (method === "Target.attachedToTarget") {
             const attached = (params ?? {}) as AttachedToTargetEvent;
             const targetType = attached?.targetInfo?.type ?? "page";
             if (targetType !== "page") {
@@ -1346,6 +1384,8 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
     wssCdp.on("connection", (ws) => {
       cdpClients.add(ws);
+      cdpSubscribers.set(ws, { id: nextCdpSubscriberId++, broadcastCopies: 0 });
+      relayCounters.cdpClientConnections++;
 
       ws.on("message", async (data) => {
         let cmd: CdpCommand | null = null;
@@ -1420,6 +1460,8 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
       ws.on("close", () => {
         cdpClients.delete(ws);
+        cdpSubscribers.delete(ws);
+        relayCounters.cdpClientDisconnections++;
       });
     });
 

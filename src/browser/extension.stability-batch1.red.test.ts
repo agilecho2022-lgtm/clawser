@@ -667,6 +667,50 @@ it("G3 issues exactly one native debugger attach for concurrent requests on the 
   expect(f.sent.filter((m) => m.params?.method === "Target.attachedToTarget")).toHaveLength(1);
   expect(f.nativeAttachCalls).toEqual([7]);
 });
+it("reports paired debugger and Runtime lifecycle counts without tab content", async () => {
+  const f = await worker();
+  await f.api.attachTabForRelay(f.inventory.get(7)!);
+  await f.api.handleForwardCdpCommand({
+    params: { method: "Runtime.enable", params: { targetId: "target-7" } },
+  });
+  await f.notify("debuggerEvent", { tabId: 7 }, "Runtime.executionContextCreated", {
+    context: { id: 101 },
+  });
+  await f.notify("debuggerEvent", { tabId: 7 }, "Runtime.executionContextDestroyed", {
+    executionContextId: 101,
+  });
+  await f.api.detachTab(7, "canceled_by_user");
+  const snapshot = await f.api.handleForwardCdpCommand({
+    params: { method: "Clawser.diagnosticSnapshot", params: {} },
+  });
+  expect(snapshot.lifecycle).toMatchObject({
+    nativeAttachAcquired: 1,
+    nativeDetachCompleted: 1,
+    runtimeEnableCommands: 1,
+    runtimeDisableCommands: 1,
+    contextCreatedEvents: 1,
+    contextDestroyedEvents: 1,
+    liveMainSessions: 0,
+    liveChildSessions: 0,
+    liveContexts: 0,
+    forwardingListenerRegistrations: 1,
+  });
+  expect(snapshot.lifecycle.recentContextEvents).toEqual([
+    {
+      method: "Runtime.executionContextCreated",
+      targetId: "target-7",
+      sessionId: "cb-tab-1",
+      executionContextId: 101,
+    },
+    {
+      method: "Runtime.executionContextDestroyed",
+      targetId: "target-7",
+      sessionId: "cb-tab-1",
+      executionContextId: 101,
+    },
+  ]);
+  expect(JSON.stringify(snapshot.lifecycle)).not.toContain("qdd.test");
+});
 it("G2 rejects an old response and accepts a fresh command after explicit reattachment", async () => {
   let resolve!: (v: unknown) => void;
   const gate = new Promise<unknown>((r) => {

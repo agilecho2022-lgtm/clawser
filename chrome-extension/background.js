@@ -41,6 +41,27 @@ const tabBySession = new Map();
 /** @type {Map<string, number>} */
 const childSessionToTab = new Map();
 
+// Counts span one service-worker lifetime. Values contain only CDP identifiers,
+// never URLs, page text, command parameters or account data.
+const lifecycleStats = {
+  nativeAttachAcquired: 0,
+  nativeDetachCompleted: 0,
+  debuggerDetachEvents: 0,
+  runtimeEnableCommands: 0,
+  runtimeDisableCommands: 0,
+  contextCreatedEvents: 0,
+  contextDestroyedEvents: 0,
+  contextClearedEvents: 0,
+  forwardingListenerRegistrations: 0,
+  recentContextEvents: [],
+};
+const liveContexts = new Map();
+function forgetContextsForTab(tabId) {
+  for (const [key, value] of liveContexts) {
+    if (value.tabId === tabId) liveContexts.delete(key);
+  }
+}
+
 // Diagnostic history only; never used to select targets or decide outcomes.
 const tabDiagnosticEvents = [];
 let businessTabProtectionUrls = [];
@@ -154,6 +175,7 @@ function retireTabIdentity(tabId, reason) {
   reattachPending.delete(tabId);
   const tab = tabs.get(tabId);
   tabs.delete(tabId);
+  forgetContextsForTab(tabId);
   if (tab?.sessionId) tabBySession.delete(tab.sessionId);
   for (const [sessionId, parent] of childSessionToTab) {
     if (parent === tabId) childSessionToTab.delete(sessionId);
@@ -827,6 +849,7 @@ async function attachTab(tabId, opts = {}) {
       const debuggee = { tabId };
       await chrome.debugger.attach(debuggee, "1.3");
       acquired = true;
+      lifecycleStats.nativeAttachAcquired++;
       assertTabGeneration(tabId, generation);
       await chrome.debugger.sendCommand(debuggee, "Page.enable").catch(() => {});
       const info = await chrome.debugger.sendCommand(debuggee, "Target.getTargetInfo");
@@ -873,7 +896,10 @@ async function attachTab(tabId, opts = {}) {
         await releaseProtection(tabId).catch((err) =>
           console.warn("protection rollback failed", tabId, String(err)),
         );
-        await chrome.debugger.detach({ tabId }).catch(() => {});
+        await chrome.debugger.detach({ tabId }).then(
+          () => lifecycleStats.nativeDetachCompleted++,
+          () => {},
+        );
       }
       throw error;
     }
@@ -929,9 +955,11 @@ async function detachTab(tabId, reason) {
 
   if (tab?.sessionId) tabBySession.delete(tab.sessionId);
   tabs.delete(tabId);
+  forgetContextsForTab(tabId);
 
   try {
     await chrome.debugger.detach({ tabId });
+    lifecycleStats.nativeDetachCompleted++;
   } catch {
     // May already be detached.
   }
@@ -1160,6 +1188,13 @@ async function handleForwardCdpCommand(msg, expectedRelay) {
     }
     return {
       recentEvents: tabDiagnosticEvents.slice(),
+      lifecycle: {
+        ...lifecycleStats,
+        recentContextEvents: lifecycleStats.recentContextEvents.slice(),
+        liveMainSessions: [...tabs.values()].filter((tab) => tab.state === "connected").length,
+        liveChildSessions: childSessionToTab.size,
+        liveContexts: liveContexts.size,
+      },
       tabs: await Promise.all(
         allTabs.map(async (tab) => {
           let window;
@@ -1217,6 +1252,7 @@ async function handleForwardCdpCommand(msg, expectedRelay) {
   const debuggee = { tabId };
 
   if (method === "Runtime.enable") {
+    lifecycleStats.runtimeDisableCommands++;
     try {
       await chrome.debugger.sendCommand(debuggee, "Runtime.disable");
       await new Promise((r) => setTimeout(r, 50));
@@ -1224,6 +1260,7 @@ async function handleForwardCdpCommand(msg, expectedRelay) {
       // ignore
     }
     assertTabGeneration(tabId, generation);
+    lifecycleStats.runtimeEnableCommands++;
     const result = await chrome.debugger.sendCommand(debuggee, "Runtime.enable", params);
     assertTabGeneration(tabId, generation);
     return result;
@@ -1277,6 +1314,38 @@ function onDebuggerEvent(source, method, params) {
   const tab = tabs.get(tabId);
   if (!tab?.sessionId) return;
 
+  if (
+    method === "Runtime.executionContextCreated" ||
+    method === "Runtime.executionContextDestroyed"
+  ) {
+    const executionContextId =
+      method === "Runtime.executionContextCreated"
+        ? params?.context?.id
+        : params?.executionContextId;
+    if (typeof executionContextId === "number" || typeof executionContextId === "string") {
+      const sessionId = source.sessionId || tab.sessionId;
+      const key = `${sessionId}:${executionContextId}`;
+      if (method === "Runtime.executionContextCreated") {
+        lifecycleStats.contextCreatedEvents++;
+        liveContexts.set(key, { tabId });
+      } else {
+        lifecycleStats.contextDestroyedEvents++;
+        liveContexts.delete(key);
+      }
+      lifecycleStats.recentContextEvents.push({
+        method,
+        targetId: tab.targetId,
+        sessionId,
+        executionContextId,
+      });
+      if (lifecycleStats.recentContextEvents.length > 32)
+        lifecycleStats.recentContextEvents.shift();
+    }
+  } else if (method === "Runtime.executionContextsCleared") {
+    lifecycleStats.contextClearedEvents++;
+    forgetContextsForTab(tabId);
+  }
+
   if (method === "Target.attachedToTarget" && params?.sessionId) {
     childSessionToTab.set(String(params.sessionId), tabId);
   }
@@ -1303,6 +1372,8 @@ async function onDebuggerDetach(source, reason) {
   const tabId = source.tabId;
   if (!tabId) return;
   if (!tabs.has(tabId)) return;
+  lifecycleStats.debuggerDetachEvents++;
+  forgetContextsForTab(tabId);
 
   // User explicitly cancelled or DevTools replaced the connection — respect their intent
   if (reason === "canceled_by_user" || reason === "replaced_with_devtools") {
@@ -1481,6 +1552,7 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
 // Register debugger listeners at module scope so detach/event handling works
 // even when the relay WebSocket is down.
 chrome.debugger.onEvent.addListener((...args) => void whenReady(() => onDebuggerEvent(...args)));
+lifecycleStats.forwardingListenerRegistrations++;
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId != null) tabGenerations.set(source.tabId, tabGeneration(source.tabId) + 1);
   void whenReady(() => onDebuggerDetach(source, reason));
