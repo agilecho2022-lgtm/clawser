@@ -3,6 +3,7 @@ import { toBrowserErrorResponse } from "../errors.js";
 import type { PwAiModule } from "../pw-ai-module.js";
 import { getPwAiModule as getPwAiModuleBase } from "../pw-ai-module.js";
 import type { BrowserRouteContext, ProfileContext } from "../server-context.js";
+import { writeTargetDiagnostic } from "../target-diagnostics.js";
 import type { BrowserRequest, BrowserResponse } from "./types.js";
 import { getProfileContext, jsonError } from "./utils.js";
 
@@ -34,13 +35,34 @@ export function resolveTargetIdFromQuery(query: Record<string, unknown>): string
   return targetId || undefined;
 }
 
-export function handleRouteError(ctx: BrowserRouteContext, res: BrowserResponse, err: unknown) {
+export function handleRouteError(
+  ctx: BrowserRouteContext,
+  res: BrowserResponse,
+  err: unknown,
+  targetId?: string,
+) {
   const mapped = ctx.mapTabError(err);
   if (mapped) {
+    if (mapped.status === 404) {
+      writeTargetDiagnostic({
+        event: "route_error",
+        source_layer: "route_tab_error",
+        target_id: targetId,
+        http_status: 404,
+      });
+    }
     return jsonError(res, mapped.status, mapped.message);
   }
   const browserMapped = toBrowserErrorResponse(err);
   if (browserMapped) {
+    if (browserMapped.status === 404) {
+      writeTargetDiagnostic({
+        event: "route_error",
+        source_layer: "route_browser_error",
+        target_id: targetId,
+        http_status: 404,
+      });
+    }
     return jsonError(res, browserMapped.status, browserMapped.message);
   }
   jsonError(res, 500, String(err));
@@ -127,7 +149,7 @@ export async function withRouteTabContext<T>(
       cdpUrl: profileCtx.profile.cdpUrl,
     });
   } catch (err) {
-    handleRouteError(params.ctx, params.res, err);
+    handleRouteError(params.ctx, params.res, err, params.targetId);
     return undefined;
   }
 }

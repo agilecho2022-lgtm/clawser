@@ -6,6 +6,7 @@ import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
 import type { PwAiModule } from "./pw-ai-module.js";
 import { getPwAiModule } from "./pw-ai-module.js";
 import type { BrowserTab, ProfileRuntimeState } from "./server-context.types.js";
+import { writeTargetDiagnostic } from "./target-diagnostics.js";
 import { resolveTargetIdFromTabs } from "./target-id.js";
 
 type SelectionDeps = {
@@ -35,7 +36,20 @@ export function createProfileSelectionOps({
   const ensureTabAvailable = async (targetId?: string): Promise<BrowserTab> => {
     await ensureBrowserAvailable();
     const profileState = getProfileState();
-    let tabs1 = await listTabs();
+    let tabs1: BrowserTab[];
+    try {
+      tabs1 = await listTabs();
+    } catch (error) {
+      if (targetId) {
+        writeTargetDiagnostic({
+          event: "target_lookup",
+          source_layer: "server_context",
+          target_id: targetId,
+          result: "list_error",
+        });
+      }
+      throw error;
+    }
     if (tabs1.length === 0) {
       if (capabilities.requiresAttachedTab) {
         // Chrome extension relay can briefly drop its WebSocket connection (MV3 service worker
@@ -49,6 +63,16 @@ export function createProfileSelectionOps({
           }
         }
         if (tabs1.length === 0) {
+          if (targetId) {
+            writeTargetDiagnostic({
+              event: "target_lookup",
+              source_layer: "server_context",
+              target_id: targetId,
+              result: "missing",
+              candidate_count: 0,
+              visible_tab_count: 0,
+            });
+          }
           throw new BrowserTabNotFoundError(
             `tab not found (no attached Chrome tabs for profile "${profile.name}"). ` +
               "Click the Clawser Browser Relay toolbar icon on the tab you want to control (badge ON).",
@@ -59,7 +83,20 @@ export function createProfileSelectionOps({
       }
     }
 
-    const tabs = await listTabs();
+    let tabs: BrowserTab[];
+    try {
+      tabs = await listTabs();
+    } catch (error) {
+      if (targetId) {
+        writeTargetDiagnostic({
+          event: "target_lookup",
+          source_layer: "server_context",
+          target_id: targetId,
+          result: "list_error",
+        });
+      }
+      throw error;
+    }
     const candidates = capabilities.supportsPerTabWs ? tabs.filter((t) => Boolean(t.wsUrl)) : tabs;
 
     const resolveById = (raw: string) => {
@@ -85,6 +122,17 @@ export function createProfileSelectionOps({
     };
 
     const chosen = targetId ? resolveById(targetId) : pickDefault();
+
+    if (targetId) {
+      writeTargetDiagnostic({
+        event: "target_lookup",
+        source_layer: "server_context",
+        target_id: targetId,
+        result: chosen === "AMBIGUOUS" ? "ambiguous" : chosen ? "found" : "missing",
+        candidate_count: candidates.length,
+        visible_tab_count: tabs.length,
+      });
+    }
 
     if (chosen === "AMBIGUOUS") {
       throw new BrowserTargetAmbiguousError();

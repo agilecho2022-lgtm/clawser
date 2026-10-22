@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { withFetchPreconnect } from "../test-utils/fetch-mock.js";
 import type { BrowserServerState } from "./server-context.js";
@@ -110,6 +113,93 @@ describe("browser server-context ensureTabAvailable", () => {
     const ctx = createBrowserRouteContext({ getState: () => state });
     const chrome = ctx.forProfile("chrome");
     await expect(chrome.ensureTabAvailable("NOT_A_TAB")).rejects.toThrow(/tab not found/i);
+  });
+
+  it("records explicit target lookup results without page content or URLs", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "clawser-target-lookup-"));
+    const file = path.join(directory, "target.jsonl");
+    vi.stubEnv("CLAWSER_TARGET_DIAGNOSTIC_LOG", file);
+    try {
+      stubChromeJsonList([
+        [
+          {
+            id: "PROFILE",
+            type: "page",
+            url: "https://private.example/account",
+            webSocketDebuggerUrl: "ws://x/a",
+          },
+        ],
+        [
+          {
+            id: "PROFILE",
+            type: "page",
+            url: "https://private.example/account",
+            webSocketDebuggerUrl: "ws://x/a",
+          },
+        ],
+        [
+          {
+            id: "PROFILE",
+            type: "page",
+            url: "https://private.example/account",
+            webSocketDebuggerUrl: "ws://x/a",
+          },
+        ],
+        [
+          {
+            id: "PROFILE",
+            type: "page",
+            url: "https://private.example/account",
+            webSocketDebuggerUrl: "ws://x/a",
+          },
+        ],
+      ]);
+      const ctx = createBrowserRouteContext({ getState: () => makeBrowserState() });
+      const chrome = ctx.forProfile("chrome");
+      await expect(chrome.ensureTabAvailable("PROFILE")).resolves.toMatchObject({
+        targetId: "PROFILE",
+      });
+      await expect(chrome.ensureTabAvailable("MISSING")).rejects.toThrow(/tab not found/i);
+      const text = fs.readFileSync(file, "utf8");
+      const records = text
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line.slice(line.indexOf("{"))));
+      expect(records.map((record) => record.result)).toEqual(["found", "missing"]);
+      expect(records.map((record) => record.candidate_count)).toEqual([1, 1]);
+      expect(records.map((record) => record.source_layer)).toEqual([
+        "server_context",
+        "server_context",
+      ]);
+      expect(text).not.toContain("private.example");
+      expect(text).not.toContain("account");
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("records an empty attached-tab list as the source of target lookup failure", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "clawser-target-empty-"));
+    const file = path.join(directory, "target.jsonl");
+    vi.stubEnv("CLAWSER_TARGET_DIAGNOSTIC_LOG", file);
+    try {
+      stubChromeJsonList([[]]);
+      const ctx = createBrowserRouteContext({ getState: () => makeBrowserState() });
+      await expect(ctx.forProfile("chrome").ensureTabAvailable("MISSING")).rejects.toThrow(
+        /no attached Chrome tabs/i,
+      );
+      const line = fs.readFileSync(file, "utf8").trim();
+      const record = JSON.parse(line.slice(line.indexOf("{")));
+      expect(record).toMatchObject({
+        result: "missing",
+        candidate_count: 0,
+        source_layer: "server_context",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("returns a descriptive message when no extension tabs are attached", async () => {
