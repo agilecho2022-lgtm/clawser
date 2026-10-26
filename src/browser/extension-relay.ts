@@ -1152,7 +1152,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
         if (extensionHandshakeDone || extensionWs !== ws) {
           return;
         }
-        setHandshakeError("扩展未完成协议握手（扩展版本可能过旧），请升级 Clawser 客户端");
+        setHandshakeError("浏览器插件连接超时，请稍后重试");
         try {
           ws.close(1008, "extension handshake timeout");
         } catch {

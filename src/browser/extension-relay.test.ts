@@ -628,6 +628,24 @@ describe("chrome extension relay server", () => {
     ext2.close();
   });
 
+  it("reports an unanswered handshake as a connection timeout, not a version problem", async () => {
+    const port = await getFreePort();
+    cdpUrl = `http://127.0.0.1:${port}`;
+    await ensureChromeExtensionRelayServer({ cdpUrl });
+    const ext = new WebSocket(`ws://127.0.0.1:${port}/extension`, {
+      headers: relayAuthHeaders(`ws://127.0.0.1:${port}/extension`),
+    });
+    await waitForOpen(ext);
+    await waitForClose(ext, 12_000);
+    const status = (await fetch(`${cdpUrl}/extension/status`).then((r) => r.json())) as {
+      connected?: boolean;
+      error?: string;
+    };
+    expect(status.connected).toBe(false);
+    expect(status.error).toContain("连接超时");
+    expect(status.error).not.toMatch(/版本|升级/);
+  }, 15_000);
+
   it("rejects handshake with mismatched protocol version and reports the reason", async () => {
     const port = await getFreePort();
     cdpUrl = `http://127.0.0.1:${port}`;
