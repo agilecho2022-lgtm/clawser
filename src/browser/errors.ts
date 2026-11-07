@@ -17,6 +17,15 @@ export class BrowserValidationError extends BrowserError {
   }
 }
 
+export class BrowserSnapshotStaleError extends BrowserError {
+  constructor() {
+    super(
+      "Browser snapshot refs are stale. Run a new snapshot and use refs from that snapshot.",
+      409,
+    );
+  }
+}
+
 export class BrowserConfigurationError extends BrowserError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, 400, options);
@@ -26,6 +35,14 @@ export class BrowserConfigurationError extends BrowserError {
 export class BrowserTargetAmbiguousError extends BrowserError {
   constructor(message = "ambiguous target id prefix", options?: ErrorOptions) {
     super(message, 409, options);
+  }
+}
+
+export class BrowserTargetUnavailableError extends BrowserError {
+  constructor(
+    message = "Target identity is temporarily unavailable; retry after the page settles.",
+  ) {
+    super(message, 409);
   }
 }
 

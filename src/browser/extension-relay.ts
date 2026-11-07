@@ -9,7 +9,9 @@ import type { Duplex } from "node:stream";
 import WebSocket, { WebSocketServer } from "ws";
 import { isLoopbackAddress, isLoopbackHost } from "../gateway/net.js";
 import { rawDataToString } from "../infra/ws.js";
+import { normalizeCloseTrace, writePageClose } from "./close-diagnostics.js";
 import { createRelayAuthToken, probeClawserRelay } from "./extension-relay-auth.js";
+import { resolveExtensionCommandTimeoutMs } from "./relay-command-timeout.js";
 
 function randomNonce(): string {
   return randomBytes(16).toString("hex");
@@ -447,30 +449,68 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
     const sendToExtension = async (
       payload: ExtensionForwardCommandMessage,
-      timeoutMs = 30_000,
+      timeoutMs = resolveExtensionCommandTimeoutMs(payload.params.method, payload.params.params),
     ): Promise<unknown> => {
-      const ws = extensionWs;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        throw new Error("Chrome extension not connected");
-      }
-      ws.send(JSON.stringify(payload));
-      return await new Promise<unknown>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pendingExtension.delete(payload.id);
-          reject(new Error(`extension request timeout: ${payload.params.method}`));
-        }, timeoutMs);
-        pendingExtension.set(payload.id, {
-          resolve,
-          reject,
-          timer,
-          method: payload.params.method,
-          targetId:
-            typeof (payload.params.params as Record<string, unknown>)?.targetId === "string"
-              ? (payload.params.params as { targetId: string }).targetId
-              : connectedTargets.get(payload.params.sessionId || "")?.targetId,
-          startedAt: Date.now(),
+      const closeParams = payload.params.params as Record<string, unknown> | undefined;
+      const closeTarget = typeof closeParams?.targetId === "string" ? closeParams.targetId : "";
+      const close =
+        payload.params.method === "Target.closeTarget"
+          ? normalizeCloseTrace(closeParams?.closeTrace, "clawser.relay.cdp_close")
+          : null;
+      if (close) {
+        payload = {
+          ...payload,
+          params: { ...payload.params, params: { ...closeParams, closeTrace: close } },
+        };
+        writePageClose(close, "forwarded", {
+          source_layer: "relay",
+          requested_target_id: closeTarget,
         });
-      });
+      }
+      try {
+        const ws = extensionWs;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          throw new Error("Chrome extension not connected");
+        }
+        ws.send(JSON.stringify(payload));
+        const result = await new Promise<unknown>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            pendingExtension.delete(payload.id);
+            reject(new Error(`extension request timeout: ${payload.params.method}`));
+          }, timeoutMs);
+          pendingExtension.set(payload.id, {
+            resolve,
+            reject,
+            timer,
+            method: payload.params.method,
+            targetId:
+              typeof (payload.params.params as Record<string, unknown>)?.targetId === "string"
+                ? (payload.params.params as { targetId: string }).targetId
+                : connectedTargets.get(payload.params.sessionId || "")?.targetId,
+            startedAt: Date.now(),
+          });
+        });
+        if (close) {
+          writePageClose(close, "acknowledged", {
+            source_layer: "relay",
+            requested_target_id: closeTarget,
+            result:
+              (result as { success?: boolean } | null)?.success === false
+                ? "plugin_rejected"
+                : "plugin_returned",
+          });
+        }
+        return result;
+      } catch (error) {
+        if (close) {
+          writePageClose(close, "failed", {
+            source_layer: "relay",
+            requested_target_id: closeTarget,
+            result: "forward_failed",
+          });
+        }
+        throw error;
+      }
     };
 
     // 记录握手失败原因，并在一段无连接时间后自动清除（陈旧 error 不永久误导现场：
@@ -1025,12 +1065,30 @@ export async function ensureChromeExtensionRelayServer(opts: {
           res.end("targetId required");
           return true;
         }
+        let closeTrace;
+        if (cdpMethod === "Target.closeTarget") {
+          let raw: unknown;
+          try {
+            raw = JSON.parse(String(req.headers["x-clawser-close-trace"] || "null"));
+          } catch {
+            raw = null;
+          }
+          closeTrace = normalizeCloseTrace(raw, "clawser.relay.http_close");
+          writePageClose(closeTrace, "accepted", {
+            source_layer: "relay",
+            ingress: "http_json_close",
+            requested_target_id: targetId,
+          });
+        }
         void (async () => {
           try {
             await sendToExtension({
               id: nextExtensionId++,
               method: "forwardCDPCommand",
-              params: { method: cdpMethod, params: { targetId } },
+              params: {
+                method: cdpMethod,
+                params: { targetId, ...(closeTrace ? { closeTrace } : {}) },
+              },
             });
           } catch {
             // ignore
@@ -1433,6 +1491,22 @@ export async function ensureChromeExtensionRelayServer(opts: {
         }
 
         try {
+          if (cmd.method === "Target.closeTarget") {
+            const params = isRecord(cmd.params) ? cmd.params : {};
+            cmd = {
+              ...cmd,
+              params: {
+                ...params,
+                closeTrace: normalizeCloseTrace(
+                  {
+                    ...(isRecord(params.closeTrace) ? params.closeTrace : {}),
+                    connection_id: `cdp-${cdpSubscribers.get(ws)?.id || "unknown"}`,
+                  },
+                  "clawser.cdp_client",
+                ),
+              },
+            };
+          }
           const result = await routeCdpCommand(cmd);
 
           if (cmd.method === "Page.addScriptToEvaluateOnNewDocument" && cmd.sessionId) {

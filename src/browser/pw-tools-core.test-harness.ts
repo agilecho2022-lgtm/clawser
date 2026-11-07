@@ -24,6 +24,7 @@ const sessionMocks = vi.hoisted(() => ({
   ensurePageState: vi.fn(() => pageState),
   forceDisconnectPlaywrightForTarget: vi.fn(async () => {}),
   restoreRoleRefsForTarget: vi.fn(() => {}),
+  assertSnapshotRefsCurrent: vi.fn(() => {}),
   storeRoleRefsForTarget: vi.fn(() => {}),
   refLocator: vi.fn(() => {
     if (!currentRefLocator) {

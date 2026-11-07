@@ -1,4 +1,6 @@
+import { closeTargetViaCdp } from "../cdp.js";
 import type { BrowserFormField } from "../client-actions-core.js";
+import { normalizeCloseTrace, writePageClose } from "../close-diagnostics.js";
 import { normalizeBrowserFormField } from "../form-fields.js";
 import type { BrowserRouteContext } from "../server-context.js";
 import { registerBrowserAgentActDownloadRoutes } from "./agent.act.download.js";
@@ -40,7 +42,7 @@ export function registerBrowserAgentActRoutes(
       ctx,
       targetId,
       feature: `act:${kind}`,
-      run: async ({ cdpUrl, tab, pw }) => {
+      run: async ({ cdpUrl, tab, pw, profileCtx }) => {
         const evaluateEnabled = ctx.state().resolved.evaluateEnabled;
 
         switch (kind) {
@@ -310,7 +312,18 @@ export function registerBrowserAgentActRoutes(
             });
           }
           case "close": {
-            await pw.closePageViaPlaywright({ cdpUrl, targetId: tab.targetId });
+            if (profileCtx.profile.driver === "extension") {
+              const trace = normalizeCloseTrace(body.closeTrace, "clawser.api.default_close");
+              writePageClose(trace, "resolved", {
+                source_layer: "route",
+                ingress: body.targetId ? "act_explicit_close" : "act_default_close",
+                requested_target_id: typeof body.targetId === "string" ? body.targetId : "",
+                actual_target_id: tab.targetId,
+              });
+              await closeTargetViaCdp({ cdpUrl, targetId: tab.targetId, closeTrace: trace });
+            } else {
+              await pw.closePageViaPlaywright({ cdpUrl, targetId: tab.targetId });
+            }
             return res.json({ ok: true, targetId: tab.targetId });
           }
           default: {

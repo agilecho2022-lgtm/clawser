@@ -3,6 +3,8 @@ import type {
   Browser,
   BrowserContext,
   ConsoleMessage,
+  Frame,
+  Locator,
   Page,
   Request,
   Response,
@@ -21,7 +23,11 @@ import {
 import type { AriaSnapshotNode } from "./cdp.js";
 import { normalizeCdpWsUrl } from "./cdp.js";
 import { getChromeWebSocketUrl } from "./chrome.js";
-import { BrowserTabNotFoundError } from "./errors.js";
+import {
+  BrowserSnapshotStaleError,
+  BrowserTabNotFoundError,
+  BrowserTargetUnavailableError,
+} from "./errors.js";
 import {
   assertBrowserNavigationAllowed,
   assertBrowserNavigationRedirectChainAllowed,
@@ -29,7 +35,14 @@ import {
   withBrowserNavigationPolicy,
 } from "./navigation-guard.js";
 import { appendBrowserActivity } from "./pw-activity-log.js";
-import { isExtensionRelayCdpEndpoint, withPageScopedCdpClient } from "./pw-session.page-cdp.js";
+import { bindSnapshotLocator } from "./pw-ref-locator.js";
+import {
+  forgetExtensionRelayCdpEndpoint,
+  isExtensionRelayCdpEndpoint,
+  withPageScopedCdpClient,
+} from "./pw-session.page-cdp.js";
+import { findExtensionPageByNativeTarget } from "./pw-target-proof.js";
+import { assertTargetInventory } from "./target-inventory.js";
 
 export type BrowserConsoleMessage = {
   type: string;
@@ -76,6 +89,9 @@ type ConnectedBrowser = {
 };
 
 type PageState = {
+  snapshotRevision: number;
+  frameRevisions: WeakMap<Frame, number>;
+  rawAriaSnapshotRevision?: number;
   console: BrowserConsoleMessage[];
   errors: BrowserPageError[];
   requests: BrowserNetworkRequest[];
@@ -94,6 +110,9 @@ type PageState = {
   roleRefs?: Record<string, { role: string; name?: string; nth?: number }>;
   roleRefsMode?: "role" | "aria";
   roleRefsFrameSelector?: string;
+  roleRefsFrame?: Frame;
+  roleRefsTargetKey?: string;
+  roleRefsInvalidated?: boolean;
 };
 
 type RoleRefs = NonNullable<PageState["roleRefs"]>;
@@ -101,9 +120,13 @@ type RoleRefsCacheEntry = {
   refs: RoleRefs;
   frameSelector?: string;
   mode?: NonNullable<PageState["roleRefsMode"]>;
+  page?: WeakRef<Page>;
+  invalidated?: true;
 };
 type AriaRefsCacheEntry = {
   nodes: Array<Pick<AriaSnapshotNode, "ref" | "role" | "depth">>;
+  page?: WeakRef<Page>;
+  invalidated?: true;
 };
 
 type ContextState = {
@@ -203,12 +226,14 @@ export function rememberAriaRefsForTarget(opts: {
   cdpUrl: string;
   targetId: string;
   nodes: AriaSnapshotNode[];
+  page?: Page;
 }): void {
   const targetId = opts.targetId.trim();
   if (!targetId || opts.nodes.length === 0) {
     return;
   }
   ariaRefsByTarget.set(roleRefsKey(opts.cdpUrl, targetId), {
+    ...(opts.page ? { page: new WeakRef(opts.page) } : {}),
     nodes: opts.nodes.map((node) => ({
       ref: node.ref,
       role: node.role,
@@ -230,7 +255,7 @@ function resolveCachedAriaRefForPage(page: Page, ref: string): string {
     return ref;
   }
   const cached = ariaRefsByTarget.get(roleRefsKey(target.cdpUrl, target.targetId));
-  if (!cached) {
+  if (!cached || cached.invalidated) {
     return ref;
   }
   return resolveActionableAriaRefFromNodes(cached.nodes, ref);
@@ -242,6 +267,7 @@ export function rememberRoleRefsForTarget(opts: {
   refs: RoleRefs;
   frameSelector?: string;
   mode?: NonNullable<PageState["roleRefsMode"]>;
+  page?: Page;
 }): void {
   const targetId = opts.targetId.trim();
   if (!targetId) {
@@ -251,6 +277,7 @@ export function rememberRoleRefsForTarget(opts: {
     refs: opts.refs,
     ...(opts.frameSelector ? { frameSelector: opts.frameSelector } : {}),
     ...(opts.mode ? { mode: opts.mode } : {}),
+    ...(opts.page ? { page: new WeakRef(opts.page) } : {}),
   });
   while (roleRefsByTarget.size > MAX_ROLE_REFS_CACHE) {
     const first = roleRefsByTarget.keys().next();
@@ -267,21 +294,26 @@ export function storeRoleRefsForTarget(opts: {
   targetId?: string;
   refs: RoleRefs;
   frameSelector?: string;
+  frame?: Frame;
   mode: NonNullable<PageState["roleRefsMode"]>;
 }): void {
   const state = ensurePageState(opts.page);
   state.roleRefs = opts.refs;
   state.roleRefsFrameSelector = opts.frameSelector;
+  state.roleRefsFrame = opts.frame;
   state.roleRefsMode = opts.mode;
+  state.roleRefsInvalidated = false;
   if (!opts.targetId?.trim()) {
     return;
   }
+  state.roleRefsTargetKey = roleRefsKey(opts.cdpUrl, opts.targetId);
   rememberRoleRefsForTarget({
     cdpUrl: opts.cdpUrl,
     targetId: opts.targetId,
     refs: opts.refs,
     frameSelector: opts.frameSelector,
     mode: opts.mode,
+    page: opts.page,
   });
 }
 
@@ -294,17 +326,99 @@ export function restoreRoleRefsForTarget(opts: {
   if (!targetId) {
     return;
   }
-  const cached = roleRefsByTarget.get(roleRefsKey(opts.cdpUrl, targetId));
+  const key = roleRefsKey(opts.cdpUrl, targetId);
+  const cached = roleRefsByTarget.get(key);
+  const state = ensurePageState(opts.page);
+  state.roleRefsTargetKey = key;
   if (!cached) {
     return;
   }
-  const state = ensurePageState(opts.page);
+  if (
+    state.roleRefsInvalidated ||
+    cached.invalidated ||
+    (cached.page && cached.page.deref() !== opts.page) ||
+    (cached.frameSelector && cached.page?.deref() !== opts.page)
+  ) {
+    state.roleRefsInvalidated = true;
+    state.roleRefs = undefined;
+    return;
+  }
   if (state.roleRefs) {
     return;
   }
   state.roleRefs = cached.refs;
   state.roleRefsFrameSelector = cached.frameSelector;
   state.roleRefsMode = cached.mode;
+}
+
+export function assertSnapshotRefsCurrent(page: Page, ref?: string): void {
+  const state = pageStates.get(page);
+  const rawAx = /^(?:@|ref=)?ax\d+$/i.test(ref ?? "");
+  if (rawAx && state) {
+    const key =
+      state.roleRefsTargetKey ??
+      (state.activityTarget
+        ? roleRefsKey(state.activityTarget.cdpUrl, state.activityTarget.targetId)
+        : undefined);
+    const cache = key ? ariaRefsByTarget.get(key) : undefined;
+    if (
+      (state.rawAriaSnapshotRevision !== undefined &&
+        state.rawAriaSnapshotRevision !== state.snapshotRevision) ||
+      cache?.invalidated ||
+      (cache?.page && cache.page.deref() !== page)
+    ) {
+      throw new BrowserSnapshotStaleError();
+    }
+  }
+  if (
+    state?.roleRefsInvalidated &&
+    !(rawAx && state.rawAriaSnapshotRevision === state.snapshotRevision)
+  ) {
+    throw new BrowserSnapshotStaleError();
+  }
+}
+
+function invalidateRawAriaRefs(page: Page, state: PageState): void {
+  const key =
+    state.roleRefsTargetKey ??
+    (state.activityTarget
+      ? roleRefsKey(state.activityTarget.cdpUrl, state.activityTarget.targetId)
+      : undefined);
+  const cached = key ? ariaRefsByTarget.get(key) : undefined;
+  if (cached && (!cached.page || cached.page.deref() === page)) {
+    cached.invalidated = true;
+  }
+}
+
+function invalidateSnapshotRefs(page: Page, state: PageState): void {
+  const key =
+    state.roleRefsTargetKey ??
+    (state.activityTarget
+      ? roleRefsKey(state.activityTarget.cdpUrl, state.activityTarget.targetId)
+      : undefined);
+  const cached = key ? roleRefsByTarget.get(key) : undefined;
+  if (!state.roleRefs && !state.roleRefsMode && !state.roleRefsInvalidated && !cached) {
+    return;
+  }
+  state.roleRefsInvalidated = true;
+  state.roleRefs = undefined;
+  state.roleRefsMode = undefined;
+  state.roleRefsFrame = undefined;
+  state.roleRefsFrameSelector = undefined;
+  if (key) {
+    // A delayed event from a retired Page must not revoke a successor's snapshot.
+    if (!cached?.page || cached.page.deref() === page) {
+      roleRefsByTarget.set(key, { refs: {}, invalidated: true, page: new WeakRef(page) });
+      invalidateRawAriaRefs(page, state);
+      while (roleRefsByTarget.size > MAX_ROLE_REFS_CACHE) {
+        const oldest = roleRefsByTarget.keys().next();
+        if (oldest.done) {
+          break;
+        }
+        roleRefsByTarget.delete(oldest.value);
+      }
+    }
+  }
 }
 
 export function ensurePageState(page: Page): PageState {
@@ -314,6 +428,8 @@ export function ensurePageState(page: Page): PageState {
   }
 
   const state: PageState = {
+    snapshotRevision: 0,
+    frameRevisions: new WeakMap(),
     console: [],
     errors: [],
     requests: [],
@@ -408,7 +524,25 @@ export function ensurePageState(page: Page): PageState {
         appendBrowserActivity("request", state.activityTarget, rec);
       }
     });
+    const invalidateFrame = (frame: Frame, navigated: boolean) => {
+      state.snapshotRevision++;
+      state.frameRevisions.set(frame, (state.frameRevisions.get(frame) ?? 0) + 1);
+      invalidateRawAriaRefs(page, state);
+      if (
+        (navigated && frame === page.mainFrame()) ||
+        state.roleRefsMode === "aria" ||
+        (state.roleRefsFrame && frame === state.roleRefsFrame) ||
+        (state.roleRefsFrameSelector && !state.roleRefsFrame)
+      ) {
+        invalidateSnapshotRefs(page, state);
+      }
+    };
+    page.on("framenavigated", (frame) => invalidateFrame(frame, true));
+    page.on("framedetached", (frame) => invalidateFrame(frame, false));
     page.on("close", () => {
+      state.snapshotRevision++;
+      invalidateRawAriaRefs(page, state);
+      invalidateSnapshotRefs(page, state);
       pageStates.delete(page);
       observedPages.delete(page);
     });
@@ -485,6 +619,7 @@ async function connectBrowser(cdpUrl: string): Promise<ConnectedBrowser> {
           const current = cachedByCdpUrl.get(normalized);
           if (current?.browser === browser) {
             cachedByCdpUrl.delete(normalized);
+            forgetExtensionRelayCdpEndpoint(normalized);
           }
         };
         const connected: ConnectedBrowser = { browser, cdpUrl: normalized, onDisconnected };
@@ -535,48 +670,6 @@ async function pageTargetId(page: Page): Promise<string | null> {
   }
 }
 
-function matchPageByTargetList(
-  pages: Page[],
-  targets: Array<{ id: string; url: string; title?: string }>,
-  targetId: string,
-): Page | null {
-  const target = targets.find((entry) => entry.id === targetId);
-  if (!target) {
-    return null;
-  }
-
-  const urlMatch = pages.filter((page) => page.url() === target.url);
-  if (urlMatch.length === 1) {
-    return urlMatch[0] ?? null;
-  }
-  if (urlMatch.length > 1) {
-    const sameUrlTargets = targets.filter((entry) => entry.url === target.url);
-    if (sameUrlTargets.length === urlMatch.length) {
-      const idx = sameUrlTargets.findIndex((entry) => entry.id === targetId);
-      if (idx >= 0 && idx < urlMatch.length) {
-        return urlMatch[idx] ?? null;
-      }
-    }
-  }
-  return null;
-}
-
-async function findPageByTargetIdViaTargetList(
-  pages: Page[],
-  targetId: string,
-  cdpUrl: string,
-): Promise<Page | null> {
-  const cdpHttpBase = normalizeCdpHttpBaseForJsonEndpoints(cdpUrl);
-  const targets = await fetchJson<
-    Array<{
-      id: string;
-      url: string;
-      title?: string;
-    }>
-  >(appendCdpPath(cdpHttpBase, "/json/list"), 2000);
-  return matchPageByTargetList(pages, targets, targetId);
-}
-
 async function findPageByTargetId(
   browser: Browser,
   targetId: string,
@@ -587,23 +680,13 @@ async function findPageByTargetId(
     ? await isExtensionRelayCdpEndpoint(cdpUrl).catch(() => false)
     : false;
   if (cdpUrl && isExtensionRelay) {
-    try {
-      const matched = await findPageByTargetIdViaTargetList(pages, targetId, cdpUrl);
-      if (matched) {
-        return matched;
-      }
-    } catch {
-      // Ignore fetch errors and fall through to best-effort single-page fallback.
-    }
-    return pages.length === 1 ? (pages[0] ?? null) : null;
+    return await findExtensionPageByNativeTarget(browser, cdpUrl, targetId);
   }
 
-  let resolvedViaCdp = false;
   for (const page of pages) {
     let tid: string | null = null;
     try {
       tid = await pageTargetId(page);
-      resolvedViaCdp = true;
     } catch {
       tid = null;
     }
@@ -613,13 +696,22 @@ async function findPageByTargetId(
   }
   if (cdpUrl) {
     try {
-      return await findPageByTargetIdViaTargetList(pages, targetId, cdpUrl);
-    } catch {
-      // Ignore fetch errors and fall through to return null.
+      const targets = await fetchJson<Array<{ id: string }>>(
+        appendCdpPath(normalizeCdpHttpBaseForJsonEndpoints(cdpUrl), "/json/list"),
+        2000,
+      );
+      assertTargetInventory(targets);
+      if (targets.some((target) => target.id === targetId)) {
+        throw new BrowserTargetUnavailableError();
+      }
+    } catch (error) {
+      if (error instanceof BrowserTargetUnavailableError) {
+        throw error;
+      }
+      throw new BrowserTargetUnavailableError(
+        "Target inventory is unavailable; page absence is not established.",
+      );
     }
-  }
-  if (!resolvedViaCdp && pages.length === 1) {
-    return pages[0] ?? null;
   }
   return null;
 }
@@ -642,29 +734,43 @@ export async function getPageForTargetId(opts: {
 }): Promise<Page> {
   const { browser } = await connectBrowser(opts.cdpUrl);
   const pages = await getAllPages(browser);
+  if (opts.targetId) {
+    const found = await findPageByTargetId(browser, opts.targetId, opts.cdpUrl);
+    if (!found) {
+      throw new BrowserTabNotFoundError();
+    }
+    bindPageActivityTarget(found, opts);
+    return found;
+  }
   if (!pages.length) {
     throw new Error("No pages available in the connected browser.");
   }
   const first = pages[0];
-  if (!opts.targetId) {
-    return first;
-  }
-  const found = await findPageByTargetId(browser, opts.targetId, opts.cdpUrl);
-  if (!found) {
-    // Extension relays can block CDP attachment APIs (e.g. Target.attachToBrowserTarget),
-    // which prevents us from resolving a page's targetId via newCDPSession(). If Playwright
-    // only exposes a single Page, use it as a best-effort fallback.
-    if (pages.length === 1) {
-      bindPageActivityTarget(first, opts);
-      return first;
-    }
-    throw new BrowserTabNotFoundError();
-  }
-  bindPageActivityTarget(found, opts);
-  return found;
+  return first;
 }
 
-export function refLocator(page: Page, ref: string) {
+function bindRefLocator(page: Page, ref: string, locator: Locator): Locator {
+  const state = ensurePageState(page);
+  const main = page.mainFrame();
+  const frame = state.roleRefsFrame ?? main;
+  const mainRevision = state.frameRevisions.get(main) ?? 0;
+  const frameRevision = state.frameRevisions.get(frame) ?? 0;
+  const wide = state.roleRefsMode === "aria" || /^(?:@|ref=)?ax\d+$/i.test(ref);
+  const revision = state.snapshotRevision;
+  return bindSnapshotLocator(locator, () => {
+    assertSnapshotRefsCurrent(page, ref);
+    if (
+      (state.frameRevisions.get(main) ?? 0) !== mainRevision ||
+      (state.frameRevisions.get(frame) ?? 0) !== frameRevision ||
+      (wide && state.snapshotRevision !== revision)
+    ) {
+      throw new BrowserSnapshotStaleError();
+    }
+  });
+}
+
+export function refLocator(page: Page, ref: string): Locator {
+  assertSnapshotRefsCurrent(page, ref);
   const normalized = ref.startsWith("@")
     ? ref.slice(1)
     : ref.startsWith("ref=")
@@ -678,7 +784,7 @@ export function refLocator(page: Page, ref: string) {
       const scope = state.roleRefsFrameSelector
         ? page.frameLocator(state.roleRefsFrameSelector)
         : page;
-      return scope.locator(`aria-ref=${resolved}`);
+      return bindRefLocator(page, ref, scope.locator(`aria-ref=${resolved}`));
     }
     const info = state?.roleRefs?.[resolved];
     if (!info) {
@@ -698,17 +804,18 @@ export function refLocator(page: Page, ref: string) {
     const locator = info.name
       ? locAny.getByRole(info.role as never, { name: info.name, exact: true })
       : locAny.getByRole(info.role as never);
-    return info.nth !== undefined ? locator.nth(info.nth) : locator;
+    return bindRefLocator(page, ref, info.nth !== undefined ? locator.nth(info.nth) : locator);
   }
 
   const resolved = /^ax\d+$/i.test(normalized)
     ? resolveCachedAriaRefForPage(page, normalized)
     : normalized;
-  return page.locator(`aria-ref=${resolved}`);
+  return bindRefLocator(page, ref, page.locator(`aria-ref=${resolved}`));
 }
 
 export async function closePlaywrightBrowserConnection(opts?: { cdpUrl?: string }): Promise<void> {
   const normalized = opts?.cdpUrl ? normalizeCdpUrl(opts.cdpUrl) : null;
+  forgetExtensionRelayCdpEndpoint(normalized ?? undefined);
 
   if (normalized) {
     const cur = cachedByCdpUrl.get(normalized);
@@ -838,6 +945,7 @@ export async function forceDisconnectPlaywrightForTarget(opts: {
   reason?: string;
 }): Promise<void> {
   const normalized = normalizeCdpUrl(opts.cdpUrl);
+  forgetExtensionRelayCdpEndpoint(normalized);
   const cur = cachedByCdpUrl.get(normalized);
   if (!cur) {
     return;

@@ -63,6 +63,103 @@ vi.mock("./cdp.helpers.js", async (importOriginal) => ({
 const mod = await import("./pw-tools-core.js");
 
 describe("pw-tools-core", () => {
+  it.each(["pushState", "hash"])(
+    "keeps an executable wait alive across same-document %s navigation",
+    async () => {
+      const events = new EventEmitter(),
+        handlers = new Map<string, Function>();
+      const frame = { _eventEmitter: events };
+      let entered!: () => void, complete!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        complete = resolve;
+      });
+      const handle = { dispose: vi.fn(async () => {}) };
+      const waitForFunction = vi.fn(async () => {
+        entered();
+        await gate;
+      });
+      setPwToolsCoreCurrentPage({
+        on: (name: string, handler: Function) => handlers.set(name, handler),
+        off: vi.fn(),
+        mainFrame: () => frame,
+        evaluateHandle: async () => handle,
+        waitForFunction,
+      });
+      const waiting = mod.waitForViaPlaywright({
+        cdpUrl: "http://127.0.0.1:18792",
+        fn: "window.ready",
+      });
+      void waiting.catch(() => {});
+      await started;
+      handlers.get("framenavigated")?.(frame);
+      events.emit("navigated", { url: "https://test/route" });
+      complete();
+      await expect(waiting).resolves.toBeUndefined();
+      expect(handle.dispose).toHaveBeenCalledOnce();
+    },
+  );
+  it("times out Document capture and disposes its late handle without starting a predicate", async () => {
+    const handle = { dispose: vi.fn(async () => {}) };
+    const waitForFunction = vi.fn<(...args: unknown[]) => Promise<void>>(async () => {});
+    let release!: () => void;
+    const capture = new Promise((resolve) => {
+      release = () => resolve(handle);
+    });
+    setPwToolsCoreCurrentPage({
+      on: vi.fn(),
+      off: vi.fn(),
+      mainFrame: () => ({ _eventEmitter: new EventEmitter() }),
+      evaluateHandle: () => capture,
+      waitForFunction,
+    });
+    const timer = setTimeout(release, 1000);
+    try {
+      await expect(
+        mod.waitForViaPlaywright({ cdpUrl: "http://127.0.0.1:18792", fn: "true", timeoutMs: 600 }),
+      ).rejects.toThrow(/600ms/);
+      release();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(handle.dispose).toHaveBeenCalledOnce();
+      expect(waitForFunction).not.toHaveBeenCalled();
+    } finally {
+      clearTimeout(timer);
+      release();
+    }
+  });
+  it("does not start a predicate when its document changes during handle capture", async () => {
+    const frame = { _eventEmitter: new EventEmitter() },
+      handlers = new Map<string, (...args: unknown[]) => void>();
+    let release!: (value: unknown) => void;
+    const handle = { dispose: vi.fn(async () => {}) };
+    const capture = new Promise((resolve) => {
+      release = resolve;
+    });
+    const waitForFunction = vi.fn(async () => {});
+    const page = {
+      on: (event: string, listener: (...args: unknown[]) => void) => {
+        handlers.set(event, listener);
+      },
+      off: vi.fn(),
+      mainFrame: () => frame,
+      evaluateHandle: vi.fn(() => capture),
+      waitForFunction,
+    };
+    setPwToolsCoreCurrentPage(page);
+    const pending = mod.waitForViaPlaywright({
+      cdpUrl: "http://127.0.0.1:18792",
+      fn: "() => true",
+    });
+    const rejected = expect(pending).rejects.toThrow(/document changed/);
+    await vi.waitFor(() => expect(page.evaluateHandle).toHaveBeenCalled());
+    frame._eventEmitter.emit("navigated", { newDocument: {} });
+    release(handle);
+    await rejected;
+    expect(waitForFunction).not.toHaveBeenCalled();
+    expect(handle.dispose).toHaveBeenCalledOnce();
+  });
   it("handles extension relay dialogs over the target CDP session", async () => {
     const ws = new FakeCdpWebSocket();
     cdpMocks.isExtensionRelayCdpEndpoint.mockResolvedValueOnce(true);
@@ -204,8 +301,9 @@ describe("pw-tools-core", () => {
     const waitForSelector = vi.fn(async () => {});
     const waitForURL = vi.fn(async () => {});
     const waitForLoadState = vi.fn(async () => {});
-    const waitForFunction = vi.fn(async () => {});
+    const waitForFunction = vi.fn<(...args: unknown[]) => Promise<void>>(async () => {});
     const waitForTimeout = vi.fn(async () => {});
+    const documentHandle = { dispose: vi.fn(async () => {}) };
 
     const page = {
       locator: vi.fn(() => ({
@@ -215,6 +313,10 @@ describe("pw-tools-core", () => {
       waitForLoadState,
       waitForFunction,
       waitForTimeout,
+      mainFrame: () => ({ _eventEmitter: new EventEmitter() }),
+      on: vi.fn(),
+      off: vi.fn(),
+      evaluateHandle: vi.fn(async () => documentHandle),
       getByText: vi.fn(() => ({ first: () => ({ waitFor: vi.fn() }) })),
     };
     setPwToolsCoreCurrentPage(page);
@@ -239,8 +341,14 @@ describe("pw-tools-core", () => {
     expect(waitForLoadState).toHaveBeenCalledWith("networkidle", {
       timeout: 1234,
     });
-    expect(waitForFunction).toHaveBeenCalledWith("window.ready===true", {
-      timeout: 1234,
-    });
+    expect(waitForFunction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { document: documentHandle },
+      { timeout: expect.any(Number) },
+    );
+    const functionOptions = waitForFunction.mock.calls[0]?.[2] as { timeout: number };
+    expect(functionOptions.timeout).toBeGreaterThan(0);
+    expect(functionOptions.timeout).toBeLessThanOrEqual(1234);
+    expect(documentHandle.dispose).toHaveBeenCalledOnce();
   });
 });

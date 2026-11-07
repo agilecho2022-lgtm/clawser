@@ -5,6 +5,7 @@ import type {
 } from "./client-actions-types.js";
 import { buildProfileQuery, withBaseUrl } from "./client-actions-url.js";
 import { fetchBrowserJson } from "./client-fetch.js";
+import { resolveBrowserActionTransportTimeoutMs } from "./relay-command-timeout.js";
 
 export type BrowserFormField = {
   ref: string;
@@ -161,7 +162,7 @@ export async function browserAct(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
-    timeoutMs: 20000,
+    timeoutMs: resolveBrowserActionTransportTimeoutMs(req),
   });
 }
 

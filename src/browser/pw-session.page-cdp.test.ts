@@ -20,6 +20,7 @@ vi.mock("./cdp.helpers.js", async () => {
 
 vi.mock("./chrome.js", () => chromeMocks);
 
+import { closePlaywrightBrowserConnection } from "./pw-session.js";
 import { isExtensionRelayCdpEndpoint, withPageScopedCdpClient } from "./pw-session.page-cdp.js";
 
 describe("pw-session page-scoped CDP client", () => {
@@ -81,6 +82,22 @@ describe("pw-session page-scoped CDP client", () => {
     expect(sessionSend).toHaveBeenCalledWith("Emulation.setLocaleOverride", { locale: "en-US" });
     expect(sessionDetach).toHaveBeenCalledTimes(1);
     expect(cdpHelperMocks.withCdpSocket).not.toHaveBeenCalled();
+  });
+
+  it("retries classification after a transient version failure instead of retaining a negative result", async () => {
+    cdpHelperMocks.fetchJson.mockRejectedValueOnce(new Error("temporary outage"));
+    cdpHelperMocks.fetchJson.mockResolvedValueOnce({ Browser: "Clawser/extension-relay" });
+    await expect(isExtensionRelayCdpEndpoint("http://127.0.0.1:29991")).resolves.toBe(false);
+    await expect(isExtensionRelayCdpEndpoint("http://127.0.0.1:29991")).resolves.toBe(true);
+  });
+
+  it("reclassifies an endpoint after its Playwright connection is retired", async () => {
+    const url = "http://127.0.0.1:29992";
+    cdpHelperMocks.fetchJson.mockResolvedValueOnce({ Browser: "Clawser/extension-relay" });
+    await expect(isExtensionRelayCdpEndpoint(url)).resolves.toBe(true);
+    await closePlaywrightBrowserConnection({ cdpUrl: url });
+    cdpHelperMocks.fetchJson.mockResolvedValueOnce({ Browser: "Chrome/145.0" });
+    await expect(isExtensionRelayCdpEndpoint(url)).resolves.toBe(false);
   });
 
   it("caches extension-relay endpoint detection by cdpUrl", async () => {

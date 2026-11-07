@@ -36,7 +36,13 @@ describe("abandoned extension open ownership", () => {
       res,
     );
     expect(openTab).toHaveBeenCalledOnce();
-    expect(closeTab).toHaveBeenCalledExactlyOnceWith("late-owned");
+    expect(closeTab).toHaveBeenCalledExactlyOnceWith(
+      "late-owned",
+      expect.objectContaining({
+        initiator: "clawser.abandoned_open",
+        close_id: expect.any(String),
+      }),
+    );
     expect(res.json).not.toHaveBeenCalled();
   });
 });

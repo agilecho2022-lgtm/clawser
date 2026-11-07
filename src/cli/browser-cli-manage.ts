@@ -7,6 +7,7 @@ import type {
   BrowserTab,
   ProfileStatus,
 } from "../browser/client.js";
+import { closeTraceFromEnvironment } from "../browser/close-diagnostics.js";
 import { danger, info } from "../globals.js";
 import { defaultRuntime } from "../runtime.js";
 import { shortenHomePath } from "../utils.js";
@@ -447,6 +448,7 @@ export function registerBrowserManageCommands(
       const parent = parentOpts(cmd);
       const profile = parent?.browserProfile;
       await runBrowserCommand(async () => {
+        const closeTrace = closeTraceFromEnvironment();
         if (targetId?.trim()) {
           await callBrowserRequest(
             parent,
@@ -454,6 +456,7 @@ export function registerBrowserManageCommands(
               method: "DELETE",
               path: `/tabs/${encodeURIComponent(targetId.trim())}`,
               query: resolveProfileQuery(profile),
+              body: { closeTrace },
             },
             { timeoutMs: 5000 },
           );
@@ -464,7 +467,7 @@ export function registerBrowserManageCommands(
               method: "POST",
               path: "/act",
               query: resolveProfileQuery(profile),
-              body: { kind: "close" },
+              body: { kind: "close", closeTrace },
             },
             { timeoutMs: 20000 },
           );

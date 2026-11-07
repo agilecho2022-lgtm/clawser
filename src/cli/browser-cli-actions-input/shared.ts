@@ -4,6 +4,7 @@ import {
   normalizeBrowserFormField,
   normalizeBrowserFormFieldValue,
 } from "../../browser/form-fields.js";
+import { resolveBrowserActionTransportTimeoutMs } from "../../browser/relay-command-timeout.js";
 import { danger } from "../../globals.js";
 import { defaultRuntime } from "../../runtime.js";
 import { callBrowserRequest, type BrowserParentOpts } from "../browser-cli-shared.js";
@@ -36,7 +37,7 @@ export async function callBrowserAct<T = unknown>(params: {
       query: params.profile ? { profile: params.profile } : undefined,
       body: params.body,
     },
-    { timeoutMs: params.timeoutMs ?? 20000 },
+    { timeoutMs: resolveBrowserActionTransportTimeoutMs(params.body, params.timeoutMs ?? 20000) },
   );
 }
 

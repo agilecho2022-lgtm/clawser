@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import type { RunningChrome } from "./chrome.js";
 import type { BrowserTab } from "./client.js";
+import type { CloseTrace } from "./close-diagnostics.js";
 import type { ResolvedBrowserConfig, ResolvedBrowserProfile } from "./config.js";
 
 export type { BrowserTab };
@@ -40,7 +41,7 @@ type BrowserProfileActions = {
   listTabs: () => Promise<BrowserTab[]>;
   openTab: (url: string) => Promise<BrowserTab>;
   focusTab: (targetId: string) => Promise<void>;
-  closeTab: (targetId: string) => Promise<void>;
+  closeTab: (targetId: string, trace?: CloseTrace) => Promise<void>;
   stopRunningBrowser: () => Promise<{ stopped: boolean }>;
   resetProfile: () => Promise<{ moved: boolean; from: string; to?: string }>;
 };

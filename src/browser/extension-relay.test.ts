@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { rawDataToString } from "../infra/ws.js";
 import { captureEnv } from "../test-utils/env.js";
@@ -262,6 +262,48 @@ describe("chrome extension relay server", () => {
     const ext = await connectExtensionAt(port);
     return { port, ext };
   }
+
+  it.each([
+    { method: "Runtime.evaluate", params: {}, deadline: 30_000 },
+    { method: "Runtime.callFunctionOn", params: { awaitPromise: false }, deadline: 30_000 },
+    { method: "Runtime.evaluate", params: { awaitPromise: true }, deadline: 125_000 },
+    { method: "Runtime.callFunctionOn", params: { awaitPromise: true }, deadline: 125_000 },
+    { method: "Runtime.awaitPromise", params: {}, deadline: 125_000 },
+  ])(
+    "bounds $method await=$params.awaitPromise at $deadline ms through the actual relay",
+    async ({ method, params, deadline }) => {
+      const { port, ext } = await startRelayWithExtension();
+      const extensionMessages = createMessageQueue(ext);
+      const cdp = new WebSocket(`ws://127.0.0.1:${port}/cdp`, {
+        headers: relayAuthHeaders(cdpUrl),
+      });
+      await waitForOpen(cdp);
+      const messages = createMessageQueue(cdp);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        cdp.send(JSON.stringify({ id: 9001, method, params }));
+        const forwarded = JSON.parse(await extensionMessages.next());
+        expect(forwarded.params.method).toBe(method);
+        let response: Record<string, unknown> | undefined;
+        const result = messages.next(130_000).then((raw) => {
+          response = JSON.parse(raw);
+        });
+        await vi.advanceTimersByTimeAsync(deadline - 1);
+        expect(response).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(1);
+        await result;
+        expect(response).toMatchObject({
+          id: 9001,
+          error: { message: `extension request timeout: ${method}` },
+        });
+        expect(ext.readyState).toBe(WebSocket.OPEN);
+      } finally {
+        vi.useRealTimers();
+        cdp.close();
+        ext.close();
+      }
+    },
+  );
 
   it("diagnostic snapshot is authenticated, read-only and includes pending commands", async () => {
     const { ext } = await startRelayWithExtension();

@@ -1,4 +1,5 @@
 import { readWindowStateViaCdp } from "../cdp.js";
+import { normalizeCloseTrace, type CloseTrace } from "../close-diagnostics.js";
 import { BrowserProfileUnavailableError, BrowserTabNotFoundError } from "../errors.js";
 import type { BrowserRouteContext, ProfileContext } from "../server-context.js";
 import type { BrowserRequest, BrowserResponse, BrowserRouteRegistrar } from "./types.js";
@@ -83,7 +84,8 @@ async function runTabTargetMutation(params: {
   res: BrowserResponse;
   ctx: BrowserRouteContext;
   targetId: string;
-  mutate: (profileCtx: ProfileContext, targetId: string) => Promise<void>;
+  mutate: (profileCtx: ProfileContext, targetId: string, trace?: CloseTrace) => Promise<void>;
+  closeTrace?: CloseTrace;
 }) {
   await withTabsProfileRoute({
     req: params.req,
@@ -94,7 +96,7 @@ async function runTabTargetMutation(params: {
       if (!(await ensureBrowserRunning(profileCtx, params.res))) {
         return;
       }
-      await params.mutate(profileCtx, params.targetId);
+      await params.mutate(profileCtx, params.targetId, params.closeTrace);
       params.res.json({ ok: true });
     },
   });
@@ -133,7 +135,10 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
         const tab = await profileCtx.openTab(url);
         if (req.signal?.aborted && profileCtx.profile.driver === "extension") {
           // Only this request owns this late result; never close pre-existing tabs.
-          await profileCtx.closeTab(tab.targetId);
+          await profileCtx.closeTab(
+            tab.targetId,
+            normalizeCloseTrace(null, "clawser.abandoned_open"),
+          );
           return;
         }
         res.json(tab);
@@ -187,8 +192,12 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
       res,
       ctx,
       targetId,
-      mutate: async (profileCtx, id) => {
-        await profileCtx.closeTab(id);
+      closeTrace: normalizeCloseTrace(
+        (req.body as { closeTrace?: unknown } | undefined)?.closeTrace,
+        "clawser.api.tabs_delete",
+      ),
+      mutate: async (profileCtx, id, trace) => {
+        await profileCtx.closeTab(id, trace);
       },
     });
   });
@@ -260,7 +269,13 @@ export function registerBrowserTabRoutes(app: BrowserRouteRegistrar, ctx: Browse
           if (!target) {
             throw new BrowserTabNotFoundError();
           }
-          await profileCtx.closeTab(target.targetId);
+          await profileCtx.closeTab(
+            target.targetId,
+            normalizeCloseTrace(
+              (req.body as { closeTrace?: unknown } | undefined)?.closeTrace,
+              "clawser.api.indexed_close",
+            ),
+          );
           return res.json({ ok: true, targetId: target.targetId });
         }
 

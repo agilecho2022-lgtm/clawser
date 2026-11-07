@@ -1,8 +1,11 @@
+import type { JSHandle } from "playwright-core";
 import type { BrowserFormField } from "./client-actions-core.js";
 import { DEFAULT_FILL_FIELD_TYPE } from "./form-fields.js";
 import { DEFAULT_UPLOAD_DIR, resolveStrictExistingPathsWithinRoot } from "./paths.js";
+import { onMainDocumentChanged } from "./pw-document-events.js";
 import {
   ensurePageState,
+  assertSnapshotRefsCurrent,
   forceDisconnectPlaywrightForTarget,
   getPageForTargetId,
   refLocator,
@@ -10,6 +13,7 @@ import {
 } from "./pw-session.js";
 import { normalizeTimeoutMs, requireRef, toAIFriendlyError } from "./pw-tools-core.shared.js";
 import { snapshotAriaViaPlaywright, snapshotRoleViaPlaywright } from "./pw-tools-core.snapshot.js";
+import { createDocumentWaitPredicate } from "./wait-predicate.js";
 
 type TargetOpts = {
   cdpUrl: string;
@@ -30,6 +34,7 @@ function isUnknownRefError(err: unknown, ref: string): boolean {
 }
 
 async function refLocatorWithSnapshotFallback(opts: TargetOpts, page: RestoredPage, ref: string) {
+  assertSnapshotRefsCurrent(page, ref);
   if (/^ax\d+$/i.test(ref)) {
     await snapshotAriaViaPlaywright({
       cdpUrl: opts.cdpUrl,
@@ -40,7 +45,8 @@ async function refLocatorWithSnapshotFallback(opts: TargetOpts, page: RestoredPa
   try {
     return refLocator(page, ref);
   } catch (err) {
-    if (!isUnknownRefError(err, ref)) {
+    const state = ensurePageState(page);
+    if (!isUnknownRefError(err, ref) || state.roleRefs || state.roleRefsMode) {
       throw err;
     }
     await snapshotRoleViaPlaywright({
@@ -431,9 +437,21 @@ export async function waitForViaPlaywright(opts: {
   fn?: string;
   timeoutMs?: number;
 }): Promise<void> {
-  const page = await getPageForTargetId(opts);
-  ensurePageState(page);
   const timeout = normalizeTimeoutMs(opts.timeoutMs, 20_000);
+  const timeoutError = new Error(`Browser executable wait timed out after ${timeout}ms`);
+  const lookupStarted = Date.now();
+  let lookupTimer: ReturnType<typeof setTimeout> | undefined;
+  const lookup = getPageForTargetId(opts);
+  const page = await (opts.fn?.trim()
+    ? Promise.race([
+        lookup,
+        new Promise<never>((_, reject) => {
+          lookupTimer = setTimeout(() => reject(timeoutError), timeout);
+        }),
+      ]).finally(() => clearTimeout(lookupTimer))
+    : lookup);
+  const executableBudget = timeout - (Date.now() - lookupStarted);
+  ensurePageState(page);
 
   if (typeof opts.timeMs === "number" && Number.isFinite(opts.timeMs)) {
     await page.waitForTimeout(Math.max(0, opts.timeMs));
@@ -468,7 +486,76 @@ export async function waitForViaPlaywright(opts: {
   if (opts.fn) {
     const fn = String(opts.fn).trim();
     if (fn) {
-      await page.waitForFunction(fn, { timeout });
+      let rejectRetired!: (error: Error) => void;
+      let retiredError: Error | undefined;
+      const retired = new Promise<never>((_, reject) => {
+        rejectRetired = reject;
+      });
+      void retired.catch(() => {});
+      const retireDocument = (message: string) => {
+        retiredError = new Error(message);
+        rejectRetired(retiredError);
+      };
+      const onClose = () => retireDocument("Wait predicate document closed");
+      const stopWatchingDocument = onMainDocumentChanged(page, () =>
+        retireDocument("Wait predicate document changed"),
+      );
+      page.on("close", onClose);
+      let document: JSHandle<Document> | undefined;
+      let finished = false;
+      let disposed = false;
+      const disposeDocument = async () => {
+        if (document && !disposed) {
+          disposed = true;
+          await document.dispose().catch(() => {});
+        }
+      };
+      const deadlineAt = Date.now() + executableBudget;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(timeoutError), Math.max(0, executableBudget));
+      });
+      try {
+        if (executableBudget <= 0) {
+          throw timeoutError;
+        }
+        const capture = page
+          .evaluateHandle(() => globalThis.document)
+          .then(async (handle) => {
+            document = handle;
+            if (finished) {
+              await disposeDocument();
+            }
+            return handle;
+          });
+        void capture.catch(() => {});
+        await Promise.race([capture, retired, deadline]);
+        if (retiredError) {
+          throw retiredError;
+        }
+        const remaining = deadlineAt - Date.now();
+        if (remaining <= 0) {
+          throw timeoutError;
+        }
+        const wait = page.waitForFunction(
+          createDocumentWaitPredicate(fn),
+          { document },
+          { timeout: remaining },
+        );
+        void wait.catch(() => {});
+        await Promise.race([wait, retired, deadline]);
+      } catch (error) {
+        if (error instanceof Error && error.name === "TimeoutError") {
+          throw timeoutError;
+        }
+        throw error;
+      } finally {
+        finished = true;
+        clearTimeout(timer);
+        stopWatchingDocument();
+        page.off("close", onClose);
+        await disposeDocument();
+      }
     }
   }
 }

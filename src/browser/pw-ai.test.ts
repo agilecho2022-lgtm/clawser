@@ -22,16 +22,20 @@ function createPage(opts: { targetId: string; snapshotFull: string }) {
     newCDPSession: vi.fn().mockResolvedValue(session),
   };
   const click = vi.fn().mockResolvedValue(undefined);
-  const locator = vi.fn().mockReturnValue({ click });
-  const getByRole = vi.fn().mockReturnValue({ click });
+  const element = { click, dispose: vi.fn().mockResolvedValue(undefined) };
+  const elementHandle = vi.fn().mockResolvedValue(element);
+  const locator = vi.fn().mockReturnValue({ elementHandle });
+  const getByRole = vi.fn().mockReturnValue({ elementHandle });
+  const frame = {};
   const page = {
     context: () => context,
+    mainFrame: () => frame,
     locator,
     getByRole,
     on: vi.fn(),
     _snapshotForAI: vi.fn().mockResolvedValue({ full: opts.snapshotFull }),
   };
-  return { page, locator, getByRole, click };
+  return { page, locator, getByRole, click, elementHandle, element };
 }
 
 function createBrowser(pages: unknown[]) {
@@ -91,5 +95,7 @@ describe("pw-ai refs", () => {
     });
     expect(p1.getByRole).not.toHaveBeenCalledWith("generic");
     expect(p1.click).toHaveBeenCalledTimes(1);
+    expect(p1.elementHandle).toHaveBeenCalledOnce();
+    expect(p1.element.dispose).toHaveBeenCalledOnce();
   });
 });

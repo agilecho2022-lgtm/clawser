@@ -237,7 +237,7 @@ export function createBrowserRouteContext(opts: ContextOptions): BrowserRouteCon
     listTabs: () => getDefaultContext().listTabs(),
     openTab: (url) => getDefaultContext().openTab(url),
     focusTab: (targetId) => getDefaultContext().focusTab(targetId),
-    closeTab: (targetId) => getDefaultContext().closeTab(targetId),
+    closeTab: (targetId, trace) => getDefaultContext().closeTab(targetId, trace),
     stopRunningBrowser: () => getDefaultContext().stopRunningBrowser(),
     resetProfile: () => getDefaultContext().resetProfile(),
     mapTabError,

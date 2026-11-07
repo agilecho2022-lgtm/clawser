@@ -6,6 +6,7 @@ import {
   isWebSocketUrl,
   withCdpSocket,
 } from "./cdp.helpers.js";
+import type { CloseTrace } from "./close-diagnostics.js";
 import { assertBrowserNavigationAllowed, withBrowserNavigationPolicy } from "./navigation-guard.js";
 
 export {
@@ -177,6 +178,23 @@ export async function attachTabsViaCdp(opts: {
     return {
       tabs: tabs.filter((tab) => Boolean(String(tab?.targetId ?? "").trim())),
     };
+  });
+}
+
+export async function closeTargetViaCdp(opts: {
+  cdpUrl: string;
+  targetId: string;
+  closeTrace: CloseTrace;
+}): Promise<void> {
+  const wsUrl = await resolveBrowserWsUrl(opts.cdpUrl);
+  await withCdpSocket(wsUrl, async (send) => {
+    const result = (await send("Target.closeTarget", {
+      targetId: opts.targetId,
+      closeTrace: opts.closeTrace,
+    })) as { success?: boolean } | null;
+    if (result?.success === false) {
+      throw new Error("Browser rejected target close");
+    }
   });
 }
 

@@ -5,6 +5,7 @@ import {
   refLocator,
   rememberRoleRefsForTarget,
   restoreRoleRefsForTarget,
+  storeRoleRefsForTarget,
 } from "./pw-session.js";
 
 function fakePage(): {
@@ -30,11 +31,13 @@ function fakePage(): {
   }));
   const locator = vi.fn(() => ({ nth: vi.fn(() => ({ ok: true })) }));
 
+  const mainFrame = {};
   const page = {
     on,
     getByRole,
     frameLocator,
     locator,
+    mainFrame: () => mainFrame,
   } as unknown as Page;
 
   return { page, handlers, mocks: { on, getByRole, frameLocator, locator } };
@@ -74,7 +77,7 @@ describe("pw-session refLocator", () => {
 });
 
 describe("pw-session role refs cache", () => {
-  it("restores refs for a different Page instance (same CDP targetId)", () => {
+  it("does not restore frame-scoped refs onto a different Page instance", () => {
     const cdpUrl = "http://127.0.0.1:9222";
     const targetId = "t1";
 
@@ -88,8 +91,68 @@ describe("pw-session role refs cache", () => {
     const { page, mocks } = fakePage();
     restoreRoleRefsForTarget({ cdpUrl, targetId, page });
 
-    refLocator(page, "e1");
-    expect(mocks.frameLocator).toHaveBeenCalledWith("iframe#main");
+    expect(() => refLocator(page, "e1")).toThrow(/stale|new snapshot/i);
+    expect(mocks.frameLocator).not.toHaveBeenCalled();
+  });
+
+  it("invalidates target refs after navigation and keeps them stale on a replacement Page", () => {
+    const first = fakePage();
+    const cdpUrl = "http://127.0.0.1:30001",
+      targetId = "native-1";
+    storeRoleRefsForTarget({
+      page: first.page,
+      cdpUrl,
+      targetId,
+      refs: { e1: { role: "button", name: "Old" } },
+      mode: "role",
+    });
+    first.handlers.get("framenavigated")?.[0]?.(first.page.mainFrame());
+    expect(() => refLocator(first.page, "e1")).toThrow(/stale|new snapshot/i);
+    const next = fakePage();
+    restoreRoleRefsForTarget({ cdpUrl, targetId, page: next.page });
+    expect(() => refLocator(next.page, "e1")).toThrow(/stale|new snapshot/i);
+    expect(next.mocks.getByRole).not.toHaveBeenCalled();
+    storeRoleRefsForTarget({
+      page: next.page,
+      cdpUrl,
+      targetId,
+      refs: { e1: { role: "button", name: "Fresh" } },
+      mode: "role",
+    });
+    refLocator(next.page, "e1");
+    expect(next.mocks.getByRole).toHaveBeenCalledWith("button", { name: "Fresh", exact: true });
+  });
+
+  it("does not restore a previous Page's refs even when the raw target id is unchanged", () => {
+    const first = fakePage(),
+      next = fakePage();
+    const identity = { cdpUrl: "http://127.0.0.1:30002", targetId: "same-target" };
+    storeRoleRefsForTarget({
+      page: first.page,
+      ...identity,
+      refs: { e1: { role: "button", name: "Old" } },
+      mode: "role",
+    });
+    restoreRoleRefsForTarget({ page: next.page, ...identity });
+    expect(() => refLocator(next.page, "e1")).toThrow(/stale|new snapshot/i);
+  });
+
+  it("invalidates the selected frame while preserving refs across unrelated frame events", () => {
+    const f = fakePage();
+    const selected = {} as import("playwright-core").Frame;
+    storeRoleRefsForTarget({
+      page: f.page,
+      cdpUrl: "http://127.0.0.1:30003",
+      targetId: "frame-target",
+      frameSelector: "iframe#main",
+      frame: selected,
+      refs: { e1: { role: "button", name: "OK" } },
+      mode: "role",
+    });
+    f.handlers.get("framenavigated")?.[0]?.({});
+    refLocator(f.page, "e1");
+    f.handlers.get("framedetached")?.[0]?.(selected);
+    expect(() => refLocator(f.page, "e1")).toThrow(/stale|new snapshot/i);
   });
 });
 

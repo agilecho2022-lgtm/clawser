@@ -1,5 +1,6 @@
 import { fetchOk, normalizeCdpHttpBaseForJsonEndpoints } from "./cdp.helpers.js";
 import { appendCdpPath } from "./cdp.js";
+import { normalizeCloseTrace, writePageClose, type CloseTrace } from "./close-diagnostics.js";
 import type { ResolvedBrowserProfile } from "./config.js";
 import { BrowserTabNotFoundError, BrowserTargetAmbiguousError } from "./errors.js";
 import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
@@ -20,7 +21,7 @@ type SelectionDeps = {
 type SelectionOps = {
   ensureTabAvailable: (targetId?: string) => Promise<BrowserTab>;
   focusTab: (targetId: string) => Promise<void>;
-  closeTab: (targetId: string) => Promise<void>;
+  closeTab: (targetId: string, trace?: CloseTrace) => Promise<void>;
 };
 
 export function createProfileSelectionOps({
@@ -179,24 +180,50 @@ export function createProfileSelectionOps({
     profileState.lastTargetId = resolvedTargetId;
   };
 
-  const closeTab = async (targetId: string): Promise<void> => {
-    const resolvedTargetId = await resolveTargetIdOrThrow(targetId);
+  const closeTab = async (targetId: string, context?: CloseTrace): Promise<void> => {
+    const trace = normalizeCloseTrace(context, "clawser.selection.close_tab");
+    writePageClose(trace, "requested", {
+      source_layer: "server_context",
+      requested_target_id: targetId,
+    });
+    try {
+      const resolvedTargetId = await resolveTargetIdOrThrow(targetId);
+      writePageClose(trace, "resolved", {
+        source_layer: "server_context",
+        requested_target_id: targetId,
+        actual_target_id: resolvedTargetId,
+      });
 
-    // For remote profiles, use Playwright's persistent connection to close tabs
-    if (capabilities.usesPersistentPlaywright) {
-      const mod = await getPwAiModule({ mode: "strict" });
-      const closePageByTargetIdViaPlaywright = (mod as Partial<PwAiModule> | null)
-        ?.closePageByTargetIdViaPlaywright;
-      if (typeof closePageByTargetIdViaPlaywright === "function") {
-        await closePageByTargetIdViaPlaywright({
-          cdpUrl: profile.cdpUrl,
-          targetId: resolvedTargetId,
-        });
-        return;
+      // For remote profiles, use Playwright's persistent connection to close tabs
+      if (capabilities.usesPersistentPlaywright) {
+        const mod = await getPwAiModule({ mode: "strict" });
+        const closePageByTargetIdViaPlaywright = (mod as Partial<PwAiModule> | null)
+          ?.closePageByTargetIdViaPlaywright;
+        if (typeof closePageByTargetIdViaPlaywright === "function") {
+          await closePageByTargetIdViaPlaywright({
+            cdpUrl: profile.cdpUrl,
+            targetId: resolvedTargetId,
+          });
+          return;
+        }
       }
-    }
 
-    await fetchOk(appendCdpPath(cdpHttpBase, `/json/close/${resolvedTargetId}`));
+      await fetchOk(appendCdpPath(cdpHttpBase, `/json/close/${resolvedTargetId}`), undefined, {
+        headers: { "x-clawser-close-trace": JSON.stringify(trace) },
+      });
+      writePageClose(trace, "accepted", {
+        source_layer: "server_context",
+        requested_target_id: targetId,
+        actual_target_id: resolvedTargetId,
+      });
+    } catch (error) {
+      writePageClose(trace, "failed", {
+        source_layer: "server_context",
+        requested_target_id: targetId,
+        result: "request_failed",
+      });
+      throw error;
+    }
   };
 
   return {

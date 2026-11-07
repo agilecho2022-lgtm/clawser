@@ -1,5 +1,7 @@
+import type { Frame, Page } from "playwright-core";
 import type { SsrFPolicy } from "../infra/net/ssrf.js";
 import { type AriaSnapshotNode, formatAriaSnapshot, type RawAXNode } from "./cdp.js";
+import { BrowserSnapshotStaleError } from "./errors.js";
 import {
   assertBrowserNavigationAllowed,
   assertBrowserNavigationRedirectChainAllowed,
@@ -23,6 +25,12 @@ import {
 } from "./pw-session.js";
 import { withPageScopedCdpClient } from "./pw-session.page-cdp.js";
 
+function assertSnapshotDocumentUnchanged(page: Page, revision: number): void {
+  if (ensurePageState(page).snapshotRevision !== revision) {
+    throw new BrowserSnapshotStaleError();
+  }
+}
+
 export async function snapshotAriaViaPlaywright(opts: {
   cdpUrl: string;
   targetId?: string;
@@ -33,7 +41,7 @@ export async function snapshotAriaViaPlaywright(opts: {
     cdpUrl: opts.cdpUrl,
     targetId: opts.targetId,
   });
-  ensurePageState(page);
+  const revision = ensurePageState(page).snapshotRevision;
   const res = (await withPageScopedCdpClient({
     cdpUrl: opts.cdpUrl,
     page,
@@ -48,12 +56,16 @@ export async function snapshotAriaViaPlaywright(opts: {
     nodes?: RawAXNode[];
   };
   const nodes = Array.isArray(res?.nodes) ? res.nodes : [];
+  assertSnapshotDocumentUnchanged(page, revision);
   const formatted = formatAriaSnapshot(nodes, limit);
+  // Refreshing raw AX ids does not establish a new role-ref snapshot (e1/e2).
+  ensurePageState(page).rawAriaSnapshotRevision = revision;
   if (opts.targetId?.trim()) {
     rememberAriaRefsForTarget({
       cdpUrl: opts.cdpUrl,
       targetId: opts.targetId,
       nodes: formatted,
+      page,
     });
   }
   return { nodes: formatted };
@@ -69,7 +81,7 @@ export async function snapshotAiViaPlaywright(opts: {
     cdpUrl: opts.cdpUrl,
     targetId: opts.targetId,
   });
-  ensurePageState(page);
+  const revision = ensurePageState(page).snapshotRevision;
 
   const maybe = page as unknown as WithSnapshotForAI;
   if (!maybe._snapshotForAI) {
@@ -93,6 +105,7 @@ export async function snapshotAiViaPlaywright(opts: {
   }
 
   const built = buildRoleSnapshotFromAiSnapshot(snapshot);
+  assertSnapshotDocumentUnchanged(page, revision);
   storeRoleRefsForTarget({
     page,
     cdpUrl: opts.cdpUrl,
@@ -105,6 +118,7 @@ export async function snapshotAiViaPlaywright(opts: {
       cdpUrl: opts.cdpUrl,
       targetId: opts.targetId,
       nodes: built.ariaNodes,
+      page,
     });
   }
   return truncated ? { snapshot, truncated, refs: built.refs } : { snapshot, refs: built.refs };
@@ -126,7 +140,7 @@ export async function snapshotRoleViaPlaywright(opts: {
     cdpUrl: opts.cdpUrl,
     targetId: opts.targetId,
   });
-  ensurePageState(page);
+  const revision = ensurePageState(page).snapshotRevision;
 
   if (opts.refsMode === "aria") {
     if (opts.selector?.trim() || opts.frameSelector?.trim()) {
@@ -141,6 +155,7 @@ export async function snapshotRoleViaPlaywright(opts: {
       track: "response",
     });
     const built = buildRoleSnapshotFromAiSnapshot(String(result?.full ?? ""), opts.options);
+    assertSnapshotDocumentUnchanged(page, revision);
     storeRoleRefsForTarget({
       page,
       cdpUrl: opts.cdpUrl,
@@ -153,6 +168,7 @@ export async function snapshotRoleViaPlaywright(opts: {
         cdpUrl: opts.cdpUrl,
         targetId: opts.targetId,
         nodes: built.ariaNodes,
+        page,
       });
     }
     return {
@@ -164,6 +180,18 @@ export async function snapshotRoleViaPlaywright(opts: {
 
   const frameSelector = opts.frameSelector?.trim() || "";
   const selector = opts.selector?.trim() || "";
+  let frame: Frame | undefined;
+  if (frameSelector) {
+    const element = await page.locator(frameSelector).elementHandle();
+    try {
+      frame = (await element?.contentFrame()) ?? undefined;
+      if (!frame) {
+        throw new Error(`Snapshot frame not found: ${frameSelector}`);
+      }
+    } finally {
+      await element?.dispose();
+    }
+  }
   const locator = frameSelector
     ? selector
       ? page.frameLocator(frameSelector).locator(selector)
@@ -174,12 +202,14 @@ export async function snapshotRoleViaPlaywright(opts: {
 
   const ariaSnapshot = await locator.ariaSnapshot();
   const built = buildRoleSnapshotFromAriaSnapshot(String(ariaSnapshot ?? ""), opts.options);
+  assertSnapshotDocumentUnchanged(page, revision);
   storeRoleRefsForTarget({
     page,
     cdpUrl: opts.cdpUrl,
     targetId: opts.targetId,
     refs: built.refs,
     frameSelector: frameSelector || undefined,
+    frame,
     mode: "role",
   });
   return {

@@ -11,18 +11,28 @@ const OPENCLAW_EXTENSION_RELAY_BROWSER = "Clawser/extension-relay";
 
 type PageCdpSend = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 
-const extensionRelayByCdpUrl = new Map<string, boolean>();
+const extensionRelayByCdpUrl = new Map<string, { value?: boolean }>();
 
 function normalizeCdpUrl(raw: string) {
   return raw.replace(/\/$/, "");
 }
 
+export function forgetExtensionRelayCdpEndpoint(cdpUrl?: string): void {
+  if (cdpUrl) {
+    extensionRelayByCdpUrl.delete(normalizeCdpUrl(cdpUrl));
+  } else {
+    extensionRelayByCdpUrl.clear();
+  }
+}
+
 export async function isExtensionRelayCdpEndpoint(cdpUrl: string): Promise<boolean> {
   const normalized = normalizeCdpUrl(cdpUrl);
   const cached = extensionRelayByCdpUrl.get(normalized);
-  if (cached !== undefined) {
-    return cached;
+  if (cached?.value !== undefined) {
+    return cached.value;
   }
+  const probe: { value?: boolean } = {};
+  extensionRelayByCdpUrl.set(normalized, probe);
 
   try {
     const cdpHttpBase = normalizeCdpHttpBaseForJsonEndpoints(normalized);
@@ -31,10 +41,15 @@ export async function isExtensionRelayCdpEndpoint(cdpUrl: string): Promise<boole
       2000,
     );
     const isRelay = String(version?.Browser ?? "").trim() === OPENCLAW_EXTENSION_RELAY_BROWSER;
-    extensionRelayByCdpUrl.set(normalized, isRelay);
+    if (extensionRelayByCdpUrl.get(normalized) === probe) {
+      probe.value = isRelay;
+    }
     return isRelay;
   } catch {
-    extensionRelayByCdpUrl.set(normalized, false);
+    // A failed probe establishes no endpoint identity; allow the next call to retry.
+    if (extensionRelayByCdpUrl.get(normalized) === probe) {
+      extensionRelayByCdpUrl.delete(normalized);
+    }
     return false;
   }
 }

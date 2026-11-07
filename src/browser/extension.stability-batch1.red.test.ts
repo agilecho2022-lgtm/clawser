@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import vm from "node:vm";
 import { afterEach, expect, it } from "vitest";
+import { rawDataToString } from "../infra/ws.js";
 // Native extension helpers are JavaScript, without TypeScript declarations.
 const utils = await import(
   new URL("../../chrome-extension/background-utils.js", import.meta.url).href
@@ -312,7 +313,7 @@ async function worker(
     .replace(/^import[\s\S]*?from ['"][^'"]+['"]\s*;?/gm, "");
   const api = vm.runInNewContext(
     source +
-      '\n;({ attachTabForRelay, detachTab, handleForwardCdpCommand, onRelayMessage, reannounceAttachedTabs, tabs, ownedCreates, ready: initPromise, setRelay: () => { relayWs = { readyState: 1, send(value) { if (relaySendFails) throw new Error("relay send failed"); sent.push(JSON.parse(value)); } } } })',
+      '\n;({ attachTabForRelay, detachTab, handleForwardCdpCommand, onRelayMessage, reannounceAttachedTabs, tabs, ownedCreates, ready: initPromise, useRelay: socket => { relayWs = socket; }, setRelay: () => { relayWs = { readyState: 1, send(value) { if (relaySendFails) throw new Error("relay send failed"); sent.push(JSON.parse(value)); } } } })',
     {
       ...utils,
       recordWorkerStart,
@@ -1111,3 +1112,427 @@ it("G6 late rollback removes only its old page while a distinct retry page stays
     }),
   ).resolves.toEqual({ result: { value: 1 } });
 });
+
+type CloseDiagnosticRow = Record<string, unknown>;
+function closeRows(f: Awaited<ReturnType<typeof worker>>): CloseDiagnosticRow[] {
+  return f.sent
+    .filter((m) => m.method === "tabDiagnostic" && m.params?.event === "page_close")
+    .map((m) => m.params as unknown as CloseDiagnosticRow);
+}
+
+it("close diagnostics link the caller, requested target, resolved tab and native removal", async () => {
+  const f = await worker();
+  await f.api.attachTabForRelay(f.inventory.get(7)!);
+  const created = await f.api.handleForwardCdpCommand({
+    params: { method: "Target.createTarget", params: { url: "https://ywb.test/shot" } },
+  });
+  await f.api.handleForwardCdpCommand({
+    params: {
+      method: "Target.closeTarget",
+      params: {
+        targetId: created.targetId,
+        closeTrace: {
+          close_id: "close-owned-1",
+          initiator: "billrpa.screenshot_cleanup",
+          initiator_pid: 123,
+          task_id: "task-1",
+          detail_id: "detail-1",
+        },
+      },
+    },
+  });
+  expect(f.removeCalls).toEqual([9]);
+  expect(f.inventory.has(7)).toBe(true);
+  const rows = closeRows(f);
+  expect(rows.map((r) => r.phase)).toEqual(
+    expect.arrayContaining(["requested", "native_remove_requested", "native_removed", "completed"]),
+  );
+  expect(rows.filter((r) => r.phase === "native_removed")).toEqual([
+    expect.objectContaining({
+      close_id: "close-owned-1",
+      initiator: "billrpa.screenshot_cleanup",
+      requested_target_id: "target-9",
+      actual_target_id: "target-9",
+      native_tab_id: 9,
+      task_id: "task-1",
+      detail_id: "detail-1",
+    }),
+  ]);
+});
+
+it("failed native removal is logged without claiming the target was removed", async () => {
+  const f = await worker({ removeError: new Error("native denied secret=do-not-log") });
+  await f.api.attachTabForRelay(f.inventory.get(7)!);
+  const result = await f.api.handleForwardCdpCommand({
+    params: {
+      method: "Target.closeTarget",
+      params: {
+        targetId: "target-7",
+        closeTrace: { close_id: "close-denied", initiator: "test.native_denied" },
+      },
+    },
+  });
+  expect(result.success).toBe(false);
+  expect(f.inventory.has(7)).toBe(true);
+  const rows = closeRows(f);
+  expect(rows).toContainEqual(
+    expect.objectContaining({ close_id: "close-denied", phase: "failed", native_tab_id: 7 }),
+  );
+  expect(rows.some((r) => r.phase === "native_removed")).toBe(false);
+  expect(JSON.stringify(rows)).not.toContain("do-not-log");
+});
+
+it("an unmatched native removal reports unknown origin and window closing information", async () => {
+  const f = await worker();
+  await f.api.attachTabForRelay(f.inventory.get(7)!);
+  f.inventory.delete(7);
+  await f.notify("removed", 7, { isWindowClosing: true, windowId: 42 });
+  expect(closeRows(f)).toContainEqual(
+    expect.objectContaining({
+      phase: "native_removed",
+      initiator: "unattributed_browser_removal",
+      native_tab_id: 7,
+      actual_target_id: "target-7",
+      is_window_closing: true,
+    }),
+  );
+});
+
+it("concurrent close traces do not exchange native targets", async () => {
+  const f = await worker();
+  await f.api.attachTabForRelay(f.inventory.get(7)!);
+  await f.api.attachTabForRelay(f.inventory.get(8)!);
+  await Promise.all(
+    [7, 8].map((id) =>
+      f.api.handleForwardCdpCommand({
+        params: {
+          method: "Target.closeTarget",
+          params: {
+            targetId: `target-${id}`,
+            closeTrace: { close_id: `close-${id}`, initiator: "test.concurrent" },
+          },
+        },
+      }),
+    ),
+  );
+  const rows = closeRows(f).filter((r) => r.phase === "native_removed");
+  expect(rows).toHaveLength(2);
+  for (const id of [7, 8]) {
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        close_id: `close-${id}`,
+        requested_target_id: `target-${id}`,
+        actual_target_id: `target-${id}`,
+        native_tab_id: id,
+      }),
+    );
+  }
+});
+
+it("create rollback names its own close origin and actual native tab", async () => {
+  const f = await worker({ attachFails: true });
+  await expect(
+    f.api.handleForwardCdpCommand({
+      params: { method: "Target.createTarget", params: { url: "https://ywb.test/shot" } },
+    }),
+  ).rejects.toThrow("native attach failed");
+  expect(f.removeCalls).toEqual([9]);
+  expect(f.inventory.has(7)).toBe(true);
+  expect(closeRows(f)).toContainEqual(
+    expect.objectContaining({
+      initiator: "clawser.extension.create_rollback",
+      phase: "native_removed",
+      native_tab_id: 9,
+    }),
+  );
+});
+
+it("Relay diagnostic delivery failure leaves native close behavior intact and retains the local event", async () => {
+  const f = await worker();
+  await f.api.attachTabForRelay(f.inventory.get(7)!);
+  f.controls.relaySendFails = true;
+  const result = await f.api.handleForwardCdpCommand({
+    params: {
+      method: "Target.closeTarget",
+      params: {
+        targetId: "target-7",
+        closeTrace: { close_id: "close-offline", initiator: "test.no_log_delivery" },
+      },
+    },
+  });
+  expect(result.success).toBe(true);
+  expect(f.removeCalls).toEqual([7]);
+  expect(f.inventory.has(8)).toBe(true);
+  const snapshot = await f.api.handleForwardCdpCommand({
+    params: { method: "Clawser.diagnosticSnapshot", params: {} },
+  });
+  expect(snapshot.recentEvents).toContainEqual(
+    expect.objectContaining({
+      event: "page_close",
+      phase: "native_removed",
+      close_id: "close-offline",
+      native_tab_id: 7,
+    }),
+  );
+});
+
+it.skipIf(!fs.existsSync(new URL("../../../billrpa/script/browser-clawser.js", import.meta.url)))(
+  "close trace crosses the real BillRPA CLI process, HTTP service, Relay and worker",
+  { timeout: 30000 },
+  async () => {
+    const os = await import("node:os"),
+      path = await import("node:path"),
+      { createRequire } = await import("node:module");
+    const { vi } = await import("vitest");
+    const { default: WebSocket } = await import("ws");
+    const { getFreePort } = await import("./test-port.js");
+    const { ensureChromeExtensionRelayServer, stopChromeExtensionRelayServer } =
+      await import("./extension-relay.js");
+    const { startBrowserControlServerFromConfig, stopBrowserControlServer } =
+      await import("./server.js");
+    const billrpa = path.resolve(process.cwd(), "../billrpa");
+    const require = createRequire(import.meta.url);
+    const Browser = require(path.join(billrpa, "script/browser-clawser.js"));
+    const { installDiagnostics } = require(path.join(billrpa, "script/relay-diagnostics.cjs"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "close-roundtrip-")),
+      logFile = path.join(dir, "trace.jsonl");
+    const controlPort = await getFreePort(),
+      relayPort = await getFreePort();
+    vi.stubEnv("BILLRPA_RELAY_LOG", logFile);
+    vi.stubEnv("BILLRPA_DIAGNOSTIC_CONTEXT", path.join(dir, "context.json"));
+    vi.stubEnv("OPENCLAW_STATE_DIR", dir);
+    vi.stubEnv("OPENCLAW_CONFIG_PATH", path.join(dir, "clawser.json"));
+    vi.stubEnv("OPENCLAW_GATEWAY_PORT", String(controlPort - 2));
+    vi.stubEnv("CLAWSER_SKIP_CHROME_BOOTSTRAP", "1");
+    // The real CLI inherits Vitest's environment; enable its normal JSON output.
+    vi.stubEnv("OPENCLAW_TEST_RUNTIME_LOG", "1");
+    fs.writeFileSync(
+      path.join(dir, "clawser.json"),
+      JSON.stringify({
+        gateway: {
+          mode: "local",
+          port: controlPort - 2,
+          auth: { mode: "token", token: "isolated-close-test" },
+        },
+        browser: {
+          enabled: true,
+          defaultProfile: "chrome",
+          profiles: {
+            chrome: {
+              driver: "extension",
+              cdpUrl: `http://127.0.0.1:${relayPort}`,
+              color: "#00AA00",
+            },
+          },
+        },
+      }),
+    );
+    const stopDiagnostics = installDiagnostics({ lifecycle: false });
+    let ws: InstanceType<typeof WebSocket> | undefined;
+    try {
+      const f = await worker();
+      f.inventory.get(7)!.url = "https://ywb.test/main";
+      await f.api.attachTabForRelay(f.inventory.get(7)!);
+      await f.api.attachTabForRelay(f.inventory.get(8)!);
+      await f.api.handleForwardCdpCommand({
+        params: {
+          method: "Target.createTarget",
+          params: { url: "https://ywb.test/shot?secret=hidden" },
+        },
+      });
+      await ensureChromeExtensionRelayServer({ cdpUrl: `http://127.0.0.1:${relayPort}` });
+      ws = new WebSocket(`ws://127.0.0.1:${relayPort}/extension?token=CLAWSER`);
+      f.api.useRelay(ws);
+      ws.on("message", (data) => {
+        void f.api.onRelayMessage(rawDataToString(data), ws);
+      });
+      await new Promise<void>((resolve, reject) => {
+        ws!.once("open", resolve);
+        ws!.once("error", reject);
+      });
+      await vi.waitFor(async () => {
+        const state = (await fetch(`http://127.0.0.1:${relayPort}/extension/status`, {
+          headers: { "x-openclaw-relay-token": "CLAWSER" },
+        }).then((r) => r.json())) as { connected: boolean };
+        expect(state.connected).toBe(true);
+      });
+      await f.api.reannounceAttachedTabs();
+      await startBrowserControlServerFromConfig();
+      const events: Record<string, unknown>[] = [];
+      const browser = new Browser({
+        bin: path.join(process.cwd(), "clawser.mjs"),
+        commandLog: (e: Record<string, unknown>) => events.push(e),
+        commandTimeoutMs: 15000,
+      });
+      await browser.close("target-9", {
+        initiator: "billrpa.screenshot_cleanup",
+        task_id: "roundtrip-T",
+        detail_id: "roundtrip-D",
+      });
+      await vi.waitFor(() => expect(f.inventory.has(9)).toBe(false));
+      expect(f.removeCalls).toEqual([9]);
+      expect(f.inventory.get(7)!.url).toBe("https://ywb.test/main");
+      const next = await browser.open("https://ywb.test/default-shot?secret=hidden");
+      expect(
+        next,
+        JSON.stringify({ result: next, nativeIds: [...f.inventory.keys()] }),
+      ).toMatchObject({ targetId: "target-10" });
+      await browser.close(null, {
+        initiator: "billrpa.test_default_close",
+        task_id: "roundtrip-T",
+        detail_id: "roundtrip-default",
+      });
+      await vi.waitFor(() => expect(f.inventory.has(10)).toBe(false));
+      expect(f.removeCalls).toEqual([9, 10]);
+      expect(f.inventory.has(7)).toBe(true);
+      const denied = await browser.open("https://ywb.test/denied-shot");
+      expect(denied.targetId).toBe("target-11");
+      f.controls.removeError = new Error("native denial not a successful deletion");
+      await browser.close("target-11", {
+        initiator: "billrpa.test_denied_close",
+        task_id: "roundtrip-T",
+        detail_id: "roundtrip-denied",
+      });
+      await vi.waitFor(() => {
+        const text = fs.readFileSync(logFile, "utf8");
+        expect(text).toContain('"result":"native_remove_failed"');
+      });
+      expect(f.inventory.has(11)).toBe(true);
+      expect(f.inventory.has(7)).toBe(true);
+      await expect(
+        browser.close(null, {
+          initiator: "billrpa.test_denied_default_close",
+          task_id: "roundtrip-T",
+          detail_id: "roundtrip-denied-default",
+        }),
+      ).rejects.toThrow();
+      expect(f.inventory.has(11)).toBe(true);
+      expect(f.removeCalls).toEqual([9, 10, 11, 11]);
+      const records = fs
+        .readFileSync(logFile, "utf8")
+        .split("\n")
+        .flatMap((line) => {
+          const start = line.indexOf("{");
+          if (start < 0) {
+            return [];
+          }
+          const row = JSON.parse(line.slice(start));
+          return [row.event === "extension_tab_event" ? row.raw : row];
+        })
+        .filter((row) => row.event === "page_close");
+      const closeId = events[0].close_id;
+      expect(typeof closeId).toBe("string");
+      const correlated = records.filter((row) => row.close_id === closeId);
+      expect(correlated).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            source_layer: "client",
+            phase: "requested",
+            requested_target_id: "target-9",
+            initiator: "billrpa.screenshot_cleanup",
+            task_id: "roundtrip-T",
+            detail_id: "roundtrip-D",
+          }),
+          expect.objectContaining({
+            source_layer: "server_context",
+            phase: "resolved",
+            requested_target_id: "target-9",
+            actual_target_id: "target-9",
+          }),
+          expect.objectContaining({
+            source_layer: "relay",
+            phase: "forwarded",
+            requested_target_id: "target-9",
+          }),
+          expect.objectContaining({
+            phase: "native_removed",
+            requested_target_id: "target-9",
+            actual_target_id: "target-9",
+            native_tab_id: 9,
+            task_id: "roundtrip-T",
+            detail_id: "roundtrip-D",
+            url: "https://ywb.test/shot",
+          }),
+        ]),
+      );
+      expect(JSON.stringify(correlated)).not.toContain("secret=hidden");
+      const defaultId = events.find(
+        (e) => e.command === "close" && e.initiator === "billrpa.test_default_close",
+      )!.close_id;
+      const defaultRows = records.filter((row) => row.close_id === defaultId);
+      expect(defaultRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source_layer: "client", requested_target_id: "" }),
+          expect.objectContaining({
+            source_layer: "route",
+            ingress: "act_default_close",
+            requested_target_id: "",
+            actual_target_id: "target-10",
+          }),
+          expect.objectContaining({
+            phase: "native_removed",
+            native_tab_id: 10,
+            actual_target_id: "target-10",
+            initiator: "billrpa.test_default_close",
+          }),
+        ]),
+      );
+      const deniedId = events.find(
+        (e) => e.command === "close" && e.initiator === "billrpa.test_denied_close",
+      )!.close_id;
+      const deniedRows = records.filter((row) => row.close_id === deniedId);
+      expect(deniedRows).toContainEqual(
+        expect.objectContaining({
+          phase: "failed",
+          result: "native_remove_failed",
+          native_tab_id: 11,
+        }),
+      );
+      expect(deniedRows.some((row) => row.phase === "native_removed")).toBe(false);
+      const deniedDefaultId = events.find(
+        (e) => e.initiator === "billrpa.test_denied_default_close",
+      )!.close_id;
+      const deniedDefaultRows = records.filter((row) => row.close_id === deniedDefaultId);
+      expect(deniedDefaultRows).toContainEqual(
+        expect.objectContaining({
+          phase: "failed",
+          result: "native_remove_failed",
+          native_tab_id: 11,
+        }),
+      );
+      expect(deniedDefaultRows.some((row) => row.phase === "native_removed")).toBe(false);
+      const actuallyRemoved = records
+        .filter((row) => row.phase === "native_removed")
+        .map((row) => row.native_tab_id)
+        .toSorted((a, b) => a - b);
+      expect(actuallyRemoved).toEqual([9, 10]);
+      if (process.env.BILLRPA_CLOSE_EVIDENCE_DIR) {
+        fs.mkdirSync(process.env.BILLRPA_CLOSE_EVIDENCE_DIR, { recursive: true });
+        fs.writeFileSync(
+          path.join(process.env.BILLRPA_CLOSE_EVIDENCE_DIR, "close-roundtrip.json"),
+          JSON.stringify(
+            {
+              close_id: closeId,
+              records: correlated,
+              default_close: { close_id: defaultId, records: defaultRows },
+              denied_close: { close_id: deniedId, records: deniedRows },
+              denied_default_close: { close_id: deniedDefaultId, records: deniedDefaultRows },
+              native_remove_calls: f.removeCalls,
+              actual_removed_native_ids: actuallyRemoved,
+              business_survives: f.inventory.has(7),
+              denied_page_survives: f.inventory.has(11),
+            },
+            null,
+            2,
+          ),
+        );
+      }
+    } finally {
+      await stopBrowserControlServer();
+      ws?.close();
+      await stopChromeExtensionRelayServer({ cdpUrl: `http://127.0.0.1:${relayPort}` });
+      stopDiagnostics();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

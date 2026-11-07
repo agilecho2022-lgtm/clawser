@@ -107,6 +107,18 @@ describe("browser action input cli commands", () => {
     expect(runtime.log).toHaveBeenCalledWith("resized to 1280x720");
   });
 
+  it("keeps gateway transport slack outside a requested executable-wait deadline", async () => {
+    await runBrowserAction(["wait", "--fn", "false", "--timeout-ms", "60000"]);
+    expect(sharedMocks.callBrowserRequest).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        path: "/act",
+        body: expect.objectContaining({ kind: "wait", timeoutMs: 60000 }),
+      }),
+      { timeoutMs: 65000 },
+    );
+  });
+
   it.each([
     {
       name: "click",
