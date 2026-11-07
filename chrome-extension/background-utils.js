@@ -1,12 +1,11 @@
 const RELAY_AUTH_TOKEN = "CLAWSER";
 
-export function reconnectDelayMs(
-  attempt,
-  opts = { baseMs: 1000, maxMs: 30000, jitterMs: 1000, random: Math.random },
-) {
+export function reconnectDelayMs(attempt, opts = {}) {
+  // The relay is local: discover a restarted desktop client promptly even
+  // after a long offline period, while retaining a bounded retry rate.
   const baseMs = Number.isFinite(opts.baseMs) ? opts.baseMs : 1000;
-  const maxMs = Number.isFinite(opts.maxMs) ? opts.maxMs : 30000;
-  const jitterMs = Number.isFinite(opts.jitterMs) ? opts.jitterMs : 1000;
+  const maxMs = Number.isFinite(opts.maxMs) ? opts.maxMs : 2000;
+  const jitterMs = Number.isFinite(opts.jitterMs) ? opts.jitterMs : 500;
   const random = typeof opts.random === "function" ? opts.random : Math.random;
   const safeAttempt = Math.max(0, Number.isFinite(attempt) ? attempt : 0);
   const backoff = Math.min(baseMs * 2 ** safeAttempt, maxMs);
