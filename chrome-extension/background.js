@@ -70,6 +70,114 @@ let protectionQueue = Promise.resolve();
 const tabGenerations = new Map();
 const attachFlights = new Map();
 const ownedCreates = new Map();
+// Diagnostic correlation only: never used to select or authorize a close.
+const pendingPageCloses = new Map();
+let nextCloseDiagnostic = 1;
+
+function closeIdentity(value) {
+  return typeof value === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : "";
+}
+function closeTrace(value, fallback) {
+  const raw = value && typeof value === "object" ? value : {};
+  const trace = {
+    close_id:
+      closeIdentity(raw.close_id) || `extension-${workerStartedAt}-${nextCloseDiagnostic++}`,
+    initiator: closeIdentity(raw.initiator) || fallback,
+  };
+  if (Number.isSafeInteger(raw.initiator_pid) && raw.initiator_pid > 0)
+    trace.initiator_pid = raw.initiator_pid;
+  for (const key of ["task_id", "detail_id", "connection_id"])
+    if (closeIdentity(raw[key])) trace[key] = raw[key];
+  return trace;
+}
+function closePageUrl(value) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "";
+  }
+}
+function recordPageClose(trace, phase, identity = {}) {
+  try {
+    const entry = {
+      event: "page_close",
+      eventAt: new Date().toISOString(),
+      phase,
+      ...trace,
+      ...identity,
+      worker: { ...workerDiagnostic },
+    };
+    tabDiagnosticEvents.push(entry);
+    if (tabDiagnosticEvents.length > 100) tabDiagnosticEvents.shift();
+    try {
+      sendToRelay({ method: "tabDiagnostic", params: entry });
+    } catch {}
+  } catch {
+    /* Diagnostics cannot change a close outcome. */
+  }
+}
+function rememberPageClose(tabId, entry) {
+  const now = Date.now();
+  for (const [id, rows] of pendingPageCloses) {
+    const fresh = rows.filter((row) => now - row.createdAt < 60000);
+    if (fresh.length) pendingPageCloses.set(id, fresh);
+    else pendingPageCloses.delete(id);
+  }
+  const rows = pendingPageCloses.get(tabId) || [];
+  rows.push(entry);
+  pendingPageCloses.set(tabId, rows.slice(-8));
+  while (pendingPageCloses.size > 100)
+    pendingPageCloses.delete(pendingPageCloses.keys().next().value);
+}
+async function removePageWithDiagnostic(tabId, requestedTarget, trace, nativeTab) {
+  const identity = {
+    requested_target_id: closeIdentity(requestedTarget),
+    actual_target_id: closeIdentity(tabs.get(tabId)?.targetId),
+    native_tab_id: tabId,
+    url: closePageUrl(nativeTab?.url),
+  };
+  const entry = { trace, identity, createdAt: Date.now() };
+  rememberPageClose(tabId, entry);
+  recordPageClose(trace, "native_remove_requested", identity);
+  try {
+    await chrome.tabs.remove(tabId);
+    recordPageClose(trace, "completed", { ...identity, result: "native_remove_returned" });
+  } catch (error) {
+    const rows = (pendingPageCloses.get(tabId) || []).filter((row) => row !== entry);
+    if (rows.length) pendingPageCloses.set(tabId, rows);
+    else pendingPageCloses.delete(tabId);
+    recordPageClose(trace, "failed", { ...identity, result: "native_remove_failed" });
+    throw error;
+  }
+}
+function recordNativePageRemoved(tabId, removeInfo = {}) {
+  const rows = (pendingPageCloses.get(tabId) || []).filter(
+    (row) => Date.now() - row.createdAt < 60000,
+  );
+  pendingPageCloses.delete(tabId);
+  const native = {
+    native_tab_id: tabId,
+    is_window_closing: removeInfo.isWindowClosing === true,
+    window_id: Number.isInteger(removeInfo.windowId) ? removeInfo.windowId : null,
+  };
+  if (!rows.length) {
+    recordPageClose(closeTrace(null, "unattributed_browser_removal"), "native_removed", {
+      ...native,
+      actual_target_id: closeIdentity(tabs.get(tabId)?.targetId),
+      attribution: "unattributed",
+    });
+  } else
+    for (const row of rows)
+      recordPageClose(row.trace, "native_removed", {
+        ...row.identity,
+        ...native,
+        attribution: rows.length === 1 ? "pending_program_request" : "ambiguous_program_requests",
+        ...(rows.length > 1
+          ? { candidate_close_ids: rows.map((item) => item.trace.close_id) }
+          : {}),
+      });
+}
 
 function tabGeneration(tabId) {
   return tabGenerations.get(tabId) || 0;
@@ -1062,8 +1170,28 @@ async function connectOrToggleForActiveTab() {
 async function handleForwardCdpCommand(msg, expectedRelay) {
   const method = String(msg?.params?.method || "").trim();
   const params = msg?.params?.params || undefined;
-  const sessionId = typeof msg?.params?.sessionId === "string" ? msg.params.sessionId : undefined;
+  const closing =
+    method === "Target.closeTarget"
+      ? closeTrace(params?.closeTrace, "clawser.extension.close_target")
+      : null;
+  if (closing)
+    recordPageClose(closing, "requested", { requested_target_id: closeIdentity(params?.targetId) });
+  try {
+    return await executeForwardCdpCommand(msg, expectedRelay, closing);
+  } catch (error) {
+    if (closing)
+      recordPageClose(closing, "failed", {
+        requested_target_id: closeIdentity(params?.targetId),
+        result: "command_rejected",
+      });
+    throw error;
+  }
+}
 
+async function executeForwardCdpCommand(msg, expectedRelay, closing) {
+  const method = String(msg?.params?.method || "").trim();
+  const params = msg?.params?.params || undefined;
+  const sessionId = typeof msg?.params?.sessionId === "string" ? msg.params.sessionId : undefined;
   if (method === "Target.createTarget") {
     const url = typeof params?.url === "string" ? params.url : "about:blank";
     const tab = await chrome.tabs.create({ url, active: false });
@@ -1079,9 +1207,12 @@ async function handleForwardCdpCommand(msg, expectedRelay) {
     } catch (error) {
       // A native replacement/removal retires ownership; never close its successor.
       if (ownedCreates.get(tab.id) === ownership) {
-        await chrome.tabs
-          .remove(tab.id)
-          .catch((err) => console.warn("create rollback failed", tab.id, String(err)));
+        await removePageWithDiagnostic(
+          tab.id,
+          "",
+          closeTrace(null, "clawser.extension.create_rollback"),
+          tab,
+        ).catch((err) => console.warn("create rollback failed", tab.id, String(err)));
       } else {
         console.warn("create rollback skipped: tab identity changed", tab.id);
       }
@@ -1269,15 +1400,36 @@ async function handleForwardCdpCommand(msg, expectedRelay) {
   if (method === "Target.closeTarget") {
     const target = typeof params?.targetId === "string" ? params.targetId : "";
     const toClose = target ? getTabByTargetId(target) : tabId;
-    if (!toClose) return { success: false };
+    if (!toClose) {
+      recordPageClose(closing, "failed", {
+        requested_target_id: closeIdentity(target),
+        result: "target_missing",
+      });
+      return { success: false };
+    }
+    let removalStarted = false;
     try {
       const allTabs = await chrome.tabs.query({});
       if (isLastRemainingTab(allTabs, toClose)) {
         console.warn("Refusing to close the last tab: this would kill the browser process");
+        recordPageClose(closing, "failed", {
+          requested_target_id: closeIdentity(target),
+          native_tab_id: toClose,
+          result: "last_tab_guard",
+        });
         return { success: false, error: "Cannot close the last tab" };
       }
-      await chrome.tabs.remove(toClose);
+      const selectedNative =
+        toClose === tabId ? nativeTab : await chrome.tabs.get(toClose).catch(() => null);
+      removalStarted = true;
+      await removePageWithDiagnostic(toClose, target, closing, selectedNative);
     } catch {
+      if (!removalStarted)
+        recordPageClose(closing, "failed", {
+          requested_target_id: closeIdentity(target),
+          native_tab_id: toClose,
+          result: "close_precondition_failed",
+        });
       return { success: false };
     }
     return { success: true };
@@ -1515,7 +1667,8 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 // Tab lifecycle listeners — clean up stale entries.
 chrome.tabs.onCreated.addListener((tab) => void whenReady(() => autoAttachOpenedTab(tab)));
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  recordNativePageRemoved(tabId, removeInfo);
   ownedCreates.delete(tabId);
   retireTabIdentity(tabId, "tab_closed");
   void whenReady(async () => {

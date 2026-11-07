@@ -125,7 +125,7 @@
   <body>
     <main>
       <h1>Privacy Policy / 隐私政策</h1>
-      <p class="meta">Clawser Browser Relay · Updated: 14 October 2026 · Extension 0.1.2</p>
+      <p class="meta">Clawser Browser Relay · Updated: 31 October 2026 · Extensions 0.1.2–0.1.3</p>
       <p class="langbar"><a href="#en">English</a><a href="#zh">中文</a></p>
       <section id="en">
         <h2>English</h2>
@@ -163,9 +163,13 @@
             browser storage. The extension does not operate a separate password-collection service.
           </li>
           <li>
-            Local diagnostics include recent tab URLs, timestamps, lifecycle events and worker-start
-            metadata. They support troubleshooting and session recovery and are delivered to the
-            local relay.
+            Local diagnostics include recent tab URLs, timestamps, lifecycle events, worker-start
+            metadata, and attachment/Runtime lifecycle counters. Version 0.1.3 adds close-request
+            and native tab-removal diagnostics: request/target/tab/window identifiers, the declared
+            initiating component and process ID, task/detail or connection identifiers when supplied
+            by the local client, and removal/failure results. Unknown or ambiguous origins are
+            identified as such. These diagnostics support troubleshooting and session recovery and
+            are delivered to the local relay.
           </li>
         </ul>
         <p>
@@ -185,10 +189,15 @@
         <p>
           <code>chrome.storage.session</code> holds temporary attachment/session identifiers for
           recovery after a service-worker restart. Recent diagnostic events are retained in memory,
-          with up to 100 tab diagnostic events, and sent to the local relay. The extension's storage
-          code does not intentionally persist page bodies, screenshots or passwords. A URL itself
-          may contain sensitive information, so recovery metadata should be treated as local user
-          data.
+          with up to 100 tab diagnostic events and 32 recent Runtime context events, and sent to the
+          local relay. Close correlation is bounded to 100 tab IDs and 8 candidates per tab;
+          candidates are eligible for correlation for 60 seconds and are removed lazily on later
+          correlation activity or tab removal. This diagnostic memory is lost when the worker
+          restarts. Dedicated close-diagnostic URL fields omit URL credentials, query strings and
+          fragments; other tab diagnostics and recovery records can still contain full URLs. The
+          extension's storage code does not intentionally persist page bodies, screenshots or
+          passwords. A URL itself may contain sensitive information, so recovery metadata should be
+          treated as local user data.
         </p>
         <p>
           Protection records are removed through normal release/cleanup handling, but interrupted
@@ -276,8 +285,10 @@
             Cookie、浏览器存储等会话与身份验证信息。扩展没有独立的密码采集服务。
           </li>
           <li>
-            本地诊断：近期标签页
-            URL、时间、生命周期事件及工作线程启动信息，用于排查问题和恢复会话，并传递给本机中继。
+            本地诊断：近期标签页 URL、时间、生命周期事件、工作线程启动信息，以及接入与 Runtime
+            生命周期计数。0.1.3
+            新增关闭请求和原生标签移除诊断：请求/目标/标签页/窗口标识、请求声明的发起组件及进程
+            ID、本机客户端提供的任务/明细或连接标识，以及移除/失败结果。来源未知或存在歧义时会明确标记。这些诊断用于排查问题和恢复会话，并传递给本机中继。
           </li>
         </ul>
         <p>
@@ -293,7 +304,12 @@
         <p>
           <code>chrome.storage.session</code>
           保存临时接入/会话标识，用于工作线程重启恢复。近期诊断事件保留在内存中，其中标签页诊断最多
-          100 条，并会传递给本机中继。扩展存储代码不主动持久化页面正文、截图或密码，但 URL
+          100 条、近期 Runtime 上下文事件最多 32 条，并会传递给本机中继。关闭关联最多保留 100
+          个标签页、每页 8 个候选请求；候选在 60
+          秒内可参与关联，由后续关联活动或标签移除时惰性清理。工作线程重启会丢失这些诊断内存。
+          专用关闭诊断的 URL 字段会去除 URL
+          凭据、查询参数和片段；其他标签诊断和恢复记录仍可能包含完整 URL。
+          扩展存储代码不主动持久化页面正文、截图或密码，但 URL
           本身可能含有敏感信息，应把恢复元数据视为本地用户数据。
         </p>
         <p>
@@ -336,7 +352,7 @@
           >反馈。请勿在公开问题中发布凭据或私密页面内容。
         </p>
       </section>
-      <footer>Clawser Browser Relay · Privacy Policy · 14 October 2026</footer>
+      <footer>Clawser Browser Relay · Privacy Policy · 31 October 2026</footer>
     </main>
   </body>
 </html>

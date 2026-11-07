@@ -39,7 +39,8 @@ function functionBody(source: ts.SourceFile, name: string): ts.FunctionDeclarati
 }
 
 function methodGuard(source: ts.SourceFile, method: string): ts.IfStatement {
-  const guard = nodes(functionBody(source, "handleForwardCdpCommand"), ts.isIfStatement).find(
+  // handleForwardCdpCommand adds diagnostics; dispatch and its ordering guards live here.
+  const guard = nodes(functionBody(source, "executeForwardCdpCommand"), ts.isIfStatement).find(
     (node) =>
       ts.isBinaryExpression(node.expression) &&
       node.expression.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken &&
@@ -72,7 +73,7 @@ describe("chrome extension background worker", () => {
   it("allows Target.createTarget before requiring an attached tab", () => {
     const source = readBackgroundWorker();
     const missingGuard = nodes(
-      functionBody(source, "handleForwardCdpCommand"),
+      functionBody(source, "executeForwardCdpCommand"),
       ts.isIfStatement,
     ).find(
       (node) =>
